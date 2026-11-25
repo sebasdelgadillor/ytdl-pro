@@ -774,10 +774,8 @@ class DownloadViewModel(private val application: Application) : AndroidViewModel
                 val toInsert = mutableListOf<DownloadItem>()
                 itemIDs.forEachIndexed { index, id ->
                     val item = resultRepository.getItemByID(id) ?: return@forEachIndexed
-                    val preferredType = getDownloadType(url = item.url).toString()
-                    val downloadItem = createDownloadItemFromResult(result = item, givenType = DownloadType.valueOf(
-                        preferredType
-                    ))
+                    val resolvedType = resolveDownloadTypeForResult(item)
+                    val downloadItem = createDownloadItemFromResult(result = item, givenType = resolvedType)
                     downloadItem.status = DownloadRepository.Status.Processing.toString()
                     downloadItem.rowNumber = index + 1
 

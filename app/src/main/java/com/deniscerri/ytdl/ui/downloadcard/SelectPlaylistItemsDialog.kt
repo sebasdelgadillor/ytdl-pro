@@ -232,7 +232,7 @@ class SelectPlaylistItemsDialog : BottomSheetDialogFragment(), PlaylistAdapter.O
                     withContext(Dispatchers.Main){
                         findNavController().navigate(R.id.action_selectPlaylistItemsDialog_to_downloadBottomSheetDialog, bundleOf(
                             Pair("result", resultItem),
-                            Pair("type", downloadViewModel.getDownloadType(url = resultItem.url)),
+                            Pair("type", downloadViewModel.resolveDownloadTypeForResult(resultItem)),
                         ))
                     }
                 }else{

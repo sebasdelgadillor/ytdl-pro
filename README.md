@@ -51,20 +51,21 @@
    - Ocultación/ajuste inteligente de la barra inferior para evitar solapamientos con barras web y mejora de reproducción embebida / pantalla completa (`MainActivity.enterWebFullscreen`).
    - Pulsación larga sobre publicaciones individuales en feeds (detectando permalink real del post, filtrando enlaces ruido como `/reels/audio/...`, `/liked_by/`, títulos genéricos *Video player* / *Instagram* o `aria-label` de avatares *Foto del perfil de…*).
    - Observador de duplicados (`alreadyExistsUiState` -> `DownloadsAlreadyExistDialog`) y soporte de SPA `history.pushState` (`doUpdateVisitedHistory`) desde el navegador.
+   - **Selector múltiple con checkboxes para carruseles (`showAllDetectedMediaSheet`):** permite elegir diapositivas concretas (imágenes y videos), **Seleccionar todo / Limpiar**, formato de salida en lote (**JPG / PNG / WEBP**) y **Descargar seleccionados (N)** accesible para TalkBack/Jieshuo, manteniendo opciones individuales en botón lateral.
 2. **Hoja de descarga unificada de 3 pestañas (`Video / Audio / Imagen`):**
    - `DownloadBottomSheetDialog` + `DownloadFragmentAdapter` con cápsulas limpias de calidad (`QualityCapsuleUtil`) para Video (MP4), Audio (MP3/M4A/Opus) e Imagen (JPG/PNG/WEBP).
    - `DownloadImageFragment` + `ImageDownloadHelper` con vista previa autenticada (cookies/User-Agent del navegador cuando el CDN lo exige).
-3. **Detección dinámica de medios en Compartir, Inicio y Navegador:**
-   - Detecta dinámicamente si un enlace es imagen directa, publicación fotográfica, audio o video en `ShareActivity`, `HomeFragment`, `HomeAdapter`, `ResultRepository`, `DownloadViewModel` y `DownloadBottomSheetDialog`.
-   - En imágenes directas o páginas fotográficas cambia automáticamente a la pestaña **Imagen** (y adapta la tarjeta en Inicio mostrando botón **Imagen** en lugar de **Audio/Video**).
+3. **Detección dinámica de medios y carruseles en Compartir, Inicio y Navegador:**
+   - Detecta dinámicamente si un enlace es imagen directa, carrusel fotográfico (`buildCarouselImageResultItems` + deduplicación de variantes `deduplicateCarouselImageUrls`), audio o video en `ShareActivity`, `HomeFragment`, `HomeAdapter`, `SelectPlaylistItemsDialog`, `ConfigureMultipleDownloadsAdapter`, `ResultRepository` y `DownloadViewModel`.
+   - En imágenes directas o páginas fotográficas cambia automáticamente a la pestaña **Imagen** (y adapta la tarjeta en Inicio mostrando botón **Imagen** en lugar de **Audio/Video**). En carruseles/listas mixtas de imágenes y videos, `SelectPlaylistItemsDialog` y `DownloadMultipleBottomSheetDialog` respetan `resolveDownloadTypeForResult(...)` por ítem.
    - Cuando el tipo de medio es incierto o falla la extracción automática, **nunca cierra ni bloquea con un diálogo muerto**: mantiene/abre el menú completo de 3 pestañas (**Video / Audio / Imagen**) con el botón **Actualizar** y aviso `media_type_uncertain_choose_format`.
 4. **Motor fallback 100% local e invisible (`LocalFallbackEngine`):**
    - Si `yt-dlp` falla o no extrae resultados, intenta en cadena: `NewPipeExtractor` → HTTP/HTML autenticado (`FallbackMediaRules`, incluyendo decodificación `efg` de Meta y scraping de `og:video`/`og:image`/JSON embebido) → WebView sniffer headless (`HeadlessWebViewSniffer`) con captura temprana tanto para video/HLS/DASH como para imágenes DOM.
    - Mapeo seguro en `YTDLPUtil` de IDs pasivos `fb_*` hacia selectores válidos de `yt-dlp` para evitar errores `-f fb_mp4_0`.
 5. **Compatibilidad total con lectores de pantalla (TalkBack y Jieshuo):**
-   - `AccessibilityUtil` y reglas estrictas en `BrowserFragment` para que el foco táctil y de lectura entre al contenido web sin quedar atrapado en botones de la barra superior/inferior, además de `contentDescription` y `stateDescription` accesibles en tarjetas y controles.
-6. **Resiliencia, mantenibilidad y reglas externas:**
-   - Toda la lógica mutable de plataformas (dominios alias, cookies CDN, selectores CSS, marcadores de permalink/feed/ruido, palabras clave, cooldowns anti-rate-limit y claves del scraper HTML) vive en `app/src/main/assets/web_rules.json` con soporte de actualización en caliente desde **Ajustes → Actualizaciones → Reglas web y extractores** sin recompilar la app.
+   - `AccessibilityUtil` y reglas estrictas en `BrowserFragment`, `PlaylistAdapter` y `SelectPlaylistItemsDialog` para que el foco táctil y de lectura entre al contenido web sin quedar atrapado en botones de la barra superior/inferior, además de `contentDescription` y `stateDescription` accesibles en tarjetas y controles.
+6. **Resiliencia, mantenibilidad y actualización remota de reglas:**
+   - Toda la lógica mutable de plataformas (dominios alias, cookies CDN, selectores CSS, marcadores de permalink/feed/ruido, palabras clave, cooldowns anti-rate-limit y claves del scraper HTML) vive en `app/src/main/assets/web_rules.json` con **actualización en 1 toque desde GitHub** (`WebRulesRegistry.fetchAndApplyRemoteRules` → `raw.githubusercontent.com/sebasdelgadillor/ytdl-pro/main/app/src/main/assets/web_rules.json`), importación JSON manual o restauración desde **Ajustes → Actualizaciones → Reglas web y extractores** sin recompilar la app.
    - `PlatformRateLimiter` (pausas automáticas por dominio), aislamiento de cookies antibot y `ProcessCacheGuardian` (limpieza segura de cachés huérfanas).
 
 ---
@@ -97,8 +98,9 @@
 - `app/src/main/java/com/deniscerri/ytdl/util/AccessibilityUtil.kt` — Helpers para TalkBack y Jieshuo+.
 - `app/src/main/java/com/deniscerri/ytdl/util/PlatformRateLimiter.kt` y `ProcessCacheGuardian.kt` — Cooldowns por plataforma y limpieza de cachés huérfanas.
 - `app/src/main/java/com/deniscerri/ytdl/ui/more/ForkInfoDialog.kt` — Diálogo informativo "Acerca de este proyecto".
+- `app/src/main/java/com/deniscerri/ytdl/ui/more/settings/updating/UpdateSettingsModule.kt` — Gestión de reglas web en Ajustes (**Actualizar desde GitHub**, importar JSON, copiar, restaurar integradas).
 - **Tests JVM (`app/src/test/java/com/deniscerri/ytdl/`):**
-  - `BrowserMediaUtilTest.kt` (14), `FallbackMediaRulesTest.kt` (7), `WebRulesRegistryTest.kt` (3), `QualityCapsuleUtilTest.kt` (5), `DomainUtilTest.kt` (5), `PlatformRateLimiterTest.kt` (3), `MetadataTagTest.kt` (14), `ExampleUnitTest.kt` (1).
+  - `BrowserMediaUtilTest.kt` (15), `FallbackMediaRulesTest.kt` (7), `WebRulesRegistryTest.kt` (4), `QualityCapsuleUtilTest.kt` (5), `DomainUtilTest.kt` (5), `PlatformRateLimiterTest.kt` (3), `MetadataTagTest.kt` (14), `ExampleUnitTest.kt` (1).
 
 ---
 
@@ -155,11 +157,10 @@ Co-authored-by: Benzaiten7 <Benzaiten7@users.noreply.github.com>
 
 ## 6. Estado Verificado Actual (2026-11-25)
 
-- **Pruebas unitarias JVM (`:app:testGithubDebugUnitTest`):** **52/52 aprobadas** (0 fallos, 0 errores, 0 omitidas) tras la última edición de código/tests.
-- **APK debug (`arm64-v8a`):** `97,143,855` bytes, instalado en Galaxy S23 (`RFCW30GSYMP`) y copiado tanto en Desktop como en `/sdcard/Download/YTDLFork-1.9.1.1-arm64-v8a-debug-github.apk`.
+- **Pruebas unitarias JVM (`:app:testGithubDebugUnitTest`):** **54/54 aprobadas** (0 fallos, 0 errores, 0 omitidas) tras la última edición de código/tests.
+- **APK debug (`arm64-v8a`):** `97,150,875` bytes, instalado en Galaxy S23 (`RFCW30GSYMP`) y copiado tanto en Desktop como en `/sdcard/Download/YTDLFork-1.9.1.1-arm64-v8a-debug-github.apk`.
 - **Pruebas en vivo verificadas en Galaxy S23 (`RFCW30GSYMP`):**
-  - `ShareActivity` con URL de imagen directa (`https://picsum.photos/id/237/800/600.jpg`): abrió directamente en pestaña **Imagen** con vista previa + cápsulas JPG/PNG/WEBP y descargó `600.jpg` (`107,556` bytes) en `/sdcard/Download/YTDLnis/Images/`.
-  - `ShareActivity` con URL incierta (`https://example.com/`): mantuvo abierto el selector completo (**Video / Audio / Imagen**) con **Actualizar** disponible, sin diálogos muertos.
-  - `ShareActivity` con publicación carrusel de Instagram (`/p/.../`): resolvió dinámicamente los elementos multimedia reales en `SelectPlaylistItemsDialog`.
-  - `HomeFragment` con URL `.webp`: abrió automáticamente en pestaña **Imagen** y adaptó la tarjeta de resultado mostrando el botón **Imagen** sin el botón **Audio**.
+  - **Actualización remota de `web_rules.json` en Ajustes:** probado **Actualizar desde GitHub** desde `Reglas web y extractores`; descargó `web_rules_override.json` (`11,631` bytes) desde `sebasdelgadillor/ytdl-pro` y cambió el origen a `JSON personalizado`.
+  - **Galería multimedios con checkboxes en Navegador:** sobre página de Instagram con `12` medios detectados, verificados checkboxes por fila, **Seleccionar todo**, chips **JPG / PNG / WEBP**, opciones individuales por ítem y **Descargar seleccionados (2)**; descargó en lote ambas imágenes seleccionadas en `.png` (`2,526,394` bytes y `144,275` bytes).
+  - **`SelectPlaylistItemsDialog` y `ShareActivity`:** probados carrusel de Instagram (`/p/.../`), URL de imagen directa (`600.jpg`, `107,556` bytes), URL incierta (`example.com` manteniendo las 3 pestañas) e Inicio con enlace `.webp` adaptando botón **Imagen**.
   - **Estabilidad y accesibilidad:** `NO_CRASHES` en `logcat` y `touch_exploration_enabled = 0` preservado sin alteraciones.

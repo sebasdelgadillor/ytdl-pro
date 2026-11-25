@@ -367,29 +367,34 @@ class ResultRepository(private val resultDao: ResultDao, commandTemplateDao: Com
         }
 
         if (itemsToReturn.isEmpty() && inputQuery.startsWith("http", ignoreCase = true)) {
-            val fallbackItem = if (isInvisibleFallbackEnabled()) {
-                LocalFallbackEngine.extractResultItem(context, inputQuery)
+            val fallbackItems = if (isInvisibleFallbackEnabled()) {
+                LocalFallbackEngine.extractResultItems(context, inputQuery)
             } else if (BrowserMediaUtil.isLikelyPhotoPageUrl(inputQuery)) {
-                ImageDownloadHelper.extractImageCandidatesFromPage(inputQuery, context)
-                    .firstOrNull()
-                    ?.let { BrowserMediaUtil.buildImageOnlyResultItem(url = inputQuery, imageUrl = it) }
+                BrowserMediaUtil.buildCarouselImageResultItems(
+                    pageUrl = inputQuery,
+                    imageUrls = ImageDownloadHelper.extractImageCandidatesFromPage(inputQuery, context)
+                )
             } else {
-                null
+                emptyList()
             }
-            if (fallbackItem != null) {
+            if (fallbackItems.isNotEmpty()) {
                 currentCoroutineContext().ensureActive()
-                fallbackItem.playlistTitle = YTDLNIS_SEARCH
-                val list = mutableListOf(fallbackItem)
+                if (fallbackItems.size == 1) {
+                    fallbackItems.first().playlistTitle = YTDLNIS_SEARCH
+                } else {
+                    fallbackItems.filter { it.playlistTitle.isBlank() }
+                        .forEach { it.playlistTitle = YTDLNIS_SEARCH }
+                }
                 if (resetResults) {
-                    itemCount.value = 1
+                    itemCount.value = fallbackItems.size
                 }
                 if (addToResults) {
-                    val ids = resultDao.insertMultiple(list)
-                    if (ids.isNotEmpty()) {
-                        fallbackItem.id = ids[0]
+                    val ids = resultDao.insertMultiple(fallbackItems)
+                    ids.forEachIndexed { index, id ->
+                        fallbackItems[index].id = id
                     }
                 }
-                itemsToReturn.add(fallbackItem)
+                itemsToReturn.addAll(fallbackItems)
                 return itemsToReturn
             }
         }

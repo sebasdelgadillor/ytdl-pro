@@ -6,8 +6,12 @@ import android.content.Context
 import android.util.TypedValue
 import android.view.Gravity
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.TextView
 import android.widget.Toast
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.MultiSelectListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceManager
@@ -20,7 +24,11 @@ import com.deniscerri.ytdl.util.UiUtil
 import com.deniscerri.ytdl.util.UpdateUtil
 import com.deniscerri.ytdl.util.rules.WebRulesRegistry
 import com.deniscerri.ytdl.work.background.UpdateCheckWorker
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.io.File
 
 object UpdateSettingsModule : SettingModule {
@@ -143,26 +151,91 @@ object UpdateSettingsModule : SettingModule {
             cfg.domains.displayNames.size
         )
 
-        val builder = MaterialAlertDialogBuilder(hostContext)
+        val density = hostContext.resources.displayMetrics.density
+        fun dp(v: Int): Int = (v * density).toInt()
+
+        val root = LinearLayout(hostContext).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(8))
+        }
+        val msgView = TextView(hostContext).apply {
+            text = msg
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setLineSpacing(0f, 1.2f)
+            setPadding(0, 0, 0, dp(14))
+        }
+        root.addView(msgView)
+
+        val dialog = MaterialAlertDialogBuilder(hostContext)
             .setTitle(R.string.web_rules_title)
-            .setMessage(msg)
-            .setPositiveButton(R.string.web_rules_import_json) { _, _ ->
-                showImportRulesJsonDialog(hostContext, pref)
+            .setView(ScrollView(hostContext).apply { addView(root) })
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+
+        fun addDialogButton(labelRes: Int, outlined: Boolean = false, onClick: (MaterialButton) -> Unit) {
+            val btn = if (outlined) {
+                MaterialButton(hostContext, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+            } else {
+                MaterialButton(hostContext)
             }
-            .setNeutralButton(R.string.web_rules_copy_json) { _, _ ->
-                UiUtil.copyToClipboard(WebRulesRegistry.exportCurrentJson(), hostContext)
+            btn.text = hostContext.getString(labelRes)
+            btn.setOnClickListener { onClick(btn) }
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(8)
             }
+            root.addView(btn, lp)
+        }
+
+        addDialogButton(R.string.web_rules_update_remote, outlined = false) { btn ->
+            btn.isEnabled = false
+            Toast.makeText(hostContext, R.string.web_rules_updating_remote, Toast.LENGTH_SHORT).show()
+            val scope = (hostContext as? LifecycleOwner)?.lifecycleScope ?: CoroutineScope(Dispatchers.Main)
+            scope.launch {
+                val res = WebRulesRegistry.fetchAndApplyRemoteRules(hostContext.applicationContext)
+                if (hostContext.isFinishing || hostContext.isDestroyed) return@launch
+                if (res.isSuccess) {
+                    val updated = res.getOrThrow()
+                    pref.summary = formatRulesSummary(pref.context)
+                    Toast.makeText(
+                        hostContext,
+                        hostContext.getString(R.string.web_rules_update_remote_success, updated.rulesVersion),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    dialog.dismiss()
+                } else {
+                    btn.isEnabled = true
+                    val errMsg = res.exceptionOrNull()?.message.orEmpty()
+                    Toast.makeText(
+                        hostContext,
+                        hostContext.getString(R.string.web_rules_update_remote_error, errMsg),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+
+        addDialogButton(R.string.web_rules_import_json, outlined = true) {
+            dialog.dismiss()
+            showImportRulesJsonDialog(hostContext, pref)
+        }
+
+        addDialogButton(R.string.web_rules_copy_json, outlined = true) {
+            UiUtil.copyToClipboard(WebRulesRegistry.exportCurrentJson(), hostContext)
+        }
 
         if (isOverride) {
-            builder.setNegativeButton(R.string.web_rules_reset_bundled) { _, _ ->
+            addDialogButton(R.string.web_rules_reset_bundled, outlined = true) {
                 WebRulesRegistry.resetOverride(hostContext)
                 pref.summary = formatRulesSummary(pref.context)
                 Toast.makeText(hostContext, R.string.web_rules_reset_done, Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
             }
-        } else {
-            builder.setNegativeButton(R.string.cancel, null)
         }
-        builder.show()
+
+        dialog.show()
     }
 
     private fun showImportRulesJsonDialog(hostContext: Context, pref: Preference) {

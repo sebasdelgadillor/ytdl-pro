@@ -116,4 +116,18 @@ class WebRulesRegistryTest {
         assertFalse(WebRulesRegistry.isUsingOverride())
         assertEquals(beforeVersion, WebRulesRegistry.current().rulesVersion)
     }
+
+    @Test
+    fun remoteVersionComparator_andRemoteUrl_workAsExpected() {
+        assertTrue(
+            WebRulesRegistry.REMOTE_RULES_URL.startsWith(
+                "https://raw.githubusercontent.com/sebasdelgadillor/ytdl-pro/"
+            )
+        )
+        assertTrue(WebRulesRegistry.isRemoteVersionNewer("2026.11.25.2", "2026.11.25.3"))
+        assertTrue(WebRulesRegistry.isRemoteVersionNewer("2026.11.25.2", "2026.12.01.1"))
+        assertFalse(WebRulesRegistry.isRemoteVersionNewer("2026.11.25.2", "2026.11.25.2"))
+        assertFalse(WebRulesRegistry.isRemoteVersionNewer("2026.11.25.3", "2026.11.25.2"))
+        assertFalse(WebRulesRegistry.isRemoteVersionNewer("2026.11.25.2", ""))
+    }
 }

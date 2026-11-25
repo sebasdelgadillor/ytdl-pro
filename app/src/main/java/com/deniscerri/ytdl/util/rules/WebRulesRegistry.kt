@@ -6,7 +6,12 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonParser
 import com.google.gson.annotations.SerializedName
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 @Keep
 data class QuickPlatformRule(
@@ -456,6 +461,77 @@ object WebRulesRegistry {
         }
         activeConfig = loadBundledConfig(appCtx) ?: WebRulesConfig.defaults()
         usingOverride = false
+    }
+
+    const val REMOTE_RULES_URL =
+        "https://raw.githubusercontent.com/sebasdelgadillor/ytdl-pro/main/app/src/main/assets/web_rules.json"
+
+    private const val MAX_REMOTE_RULES_BYTES = 512 * 1024L
+
+    private val remoteHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .build()
+    }
+
+    fun isRemoteVersionNewer(currentVersion: String, remoteVersion: String): Boolean {
+        val cur = currentVersion.trim()
+        val rem = remoteVersion.trim()
+        if (rem.isEmpty()) return false
+        if (rem == cur) return false
+
+        fun numericParts(ver: String): List<Int>? {
+            val prefix = ver.substringBefore('-').substringBefore(' ').trim()
+            if (prefix.isEmpty()) return null
+            val parts = prefix.split('.')
+            val parsed = parts.map { it.toIntOrNull() }
+            if (parsed.any { it == null }) return null
+            return parsed.filterNotNull()
+        }
+
+        val curParts = numericParts(cur)
+        val remParts = numericParts(rem)
+        if (curParts != null && remParts != null) {
+            val maxLen = maxOf(curParts.size, remParts.size)
+            for (i in 0 until maxLen) {
+                val c = curParts.getOrElse(i) { 0 }
+                val r = remParts.getOrElse(i) { 0 }
+                if (r != c) return r > c
+            }
+            return false
+        }
+        return true
+    }
+
+    suspend fun fetchAndApplyRemoteRules(
+        context: Context,
+        url: String = REMOTE_RULES_URL
+    ): Result<WebRulesConfig> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = Request.Builder()
+                .url(url)
+                .header("User-Agent", "YTDLPro-RulesUpdater/1.0")
+                .header("Accept", "application/json")
+                .build()
+
+            val body = remoteHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    throw IllegalStateException("HTTP ${resp.code}")
+                }
+                val contentLen = resp.body.contentLength()
+                if (contentLen > MAX_REMOTE_RULES_BYTES) {
+                    throw IllegalStateException("Remote rules file exceeds limit")
+                }
+                val text = resp.body.string()
+                if (text.toByteArray(Charsets.UTF_8).size > MAX_REMOTE_RULES_BYTES) {
+                    throw IllegalStateException("Remote rules payload exceeds limit")
+                }
+                text
+            }
+            importOverrideJson(context, body).getOrThrow()
+        }
     }
 
     fun exportCurrentJson(): String = prettyGson.toJson(activeConfig)

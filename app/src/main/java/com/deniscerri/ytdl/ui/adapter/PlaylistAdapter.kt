@@ -19,6 +19,8 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.deniscerri.ytdl.R
 import com.deniscerri.ytdl.database.models.ResultItem
+import com.deniscerri.ytdl.util.AccessibilityUtil
+import com.deniscerri.ytdl.util.BrowserMediaUtil
 import com.deniscerri.ytdl.util.Extensions.loadThumbnail
 import com.deniscerri.ytdl.util.Extensions.popup
 import com.google.android.material.card.MaterialCardView
@@ -66,21 +68,31 @@ class PlaylistAdapter(onItemClickListener: OnItemClickListener, activity: Activi
         val hideThumb = sharedPreferences.getStringSet("hide_thumbnails", emptySet())!!.contains("home")
         uiHandler.post { thumbnail.loadThumbnail(hideThumb, item!!.thumb) }
 
+        val isImage = BrowserMediaUtil.isImageOnlyResult(item)
+        val indexNum = item.playlistIndex ?: (position + 1)
         card.findViewById<TextView>(R.id.title).text = item!!.title
         card.findViewById<TextView>(R.id.author).text = item.author
-        card.findViewById<TextView>(R.id.duration).text = item.duration
-        card.findViewById<TextView>(R.id.index).text = ((item.playlistIndex ?: (position + 1))).toString()
+        card.findViewById<TextView>(R.id.duration).text = if (isImage && item.duration.isBlank()) {
+            activity.getString(R.string.image)
+        } else {
+            item.duration
+        }
+        card.findViewById<TextView>(R.id.index).text = indexNum.toString()
 
         // CHECKBOX ----------------------------------
         val check = card.findViewById<CheckBox>(R.id.checkBox)
+        val isCheckedNow = (checkedItems.contains(item.id) && !inverted) || (!checkedItems.contains(item.id) && inverted)
+        check.isChecked = isCheckedNow
 
-        if ((checkedItems.contains(item.id) && !inverted) || (!checkedItems.contains(item.id) && inverted)) {
-            check.isChecked = true
-        } else {
-            check.isChecked = false
-        }
+        val mediaTypeLabel = activity.getString(if (isImage) R.string.image else R.string.video)
+        card.contentDescription = "$indexNum. $mediaTypeLabel: ${item.title}"
+        AccessibilityUtil.setStateDescription(
+            card,
+            activity.getString(if (isCheckedNow) R.string.state_selected else R.string.state_unselected)
+        )
+
         check.setOnClickListener {
-            checkCard(check, item.id)
+            checkCard(check, item.id, card)
         }
 
         card.setOnClickListener {
@@ -88,7 +100,7 @@ class PlaylistAdapter(onItemClickListener: OnItemClickListener, activity: Activi
         }
     }
 
-    private fun checkCard(check: CheckBox, id: Long) {
+    private fun checkCard(check: CheckBox, id: Long, card: MaterialCardView) {
         if (!check.isChecked) {
             if (inverted) checkedItems.add(id)
             else checkedItems.remove(id)
@@ -96,6 +108,10 @@ class PlaylistAdapter(onItemClickListener: OnItemClickListener, activity: Activi
             if (inverted) checkedItems.remove(id)
             else checkedItems.add(id)
         }
+        AccessibilityUtil.setStateDescription(
+            card,
+            activity.getString(if (check.isChecked) R.string.state_selected else R.string.state_unselected)
+        )
         onItemClickListener.onCardSelect(id, check.isChecked)
     }
 

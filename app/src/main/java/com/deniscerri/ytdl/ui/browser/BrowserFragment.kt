@@ -29,8 +29,10 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.HorizontalScrollView
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
@@ -52,6 +54,7 @@ import androidx.webkit.WebViewFeature
 import com.deniscerri.ytdl.MainActivity
 import com.deniscerri.ytdl.R
 import com.deniscerri.ytdl.database.enums.DownloadType
+import com.deniscerri.ytdl.database.models.DownloadItem
 import com.deniscerri.ytdl.database.models.ResultItem
 import com.deniscerri.ytdl.database.viewmodel.BrowserViewModel
 import com.deniscerri.ytdl.database.viewmodel.DownloadCardViewModel
@@ -63,6 +66,7 @@ import com.deniscerri.ytdl.util.BrowserScriptLoader
 import com.deniscerri.ytdl.util.DomainUtil
 import com.deniscerri.ytdl.util.Extensions.isYoutubeURL
 import com.deniscerri.ytdl.util.ImageDownloadHelper
+import com.deniscerri.ytdl.util.QualityCapsuleUtil
 import com.deniscerri.ytdl.util.SiteSessionManager
 import com.deniscerri.ytdl.util.UiUtil
 import com.deniscerri.ytdl.util.extractors.fallback.FallbackMediaRules
@@ -73,6 +77,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import kotlinx.coroutines.Dispatchers
@@ -1561,6 +1566,10 @@ class BrowserFragment : Fragment() {
             }
         }
 
+        val dedupImageKeys = BrowserMediaUtil.deduplicateCarouselImageUrls(
+            items.values.filter { !it.isVideo }.map { it.url }
+        ).toSet()
+
         (hit.videoUrls + hit.postVideos).distinct().forEach { vUrl ->
             items.putIfAbsent(
                 vUrl,
@@ -1575,7 +1584,7 @@ class BrowserFragment : Fragment() {
             )
         }
 
-        return items.values.toList()
+        return items.values.filter { it.isVideo || it.url in dedupImageKeys }
     }
 
     private fun showMediaContextBottomSheet(rawHit: HitMediaResult) {
@@ -1761,41 +1770,163 @@ class BrowserFragment : Fragment() {
 
         val density = resources.displayMetrics.density
         fun dp(v: Int): Int = (v * density).toInt()
+        val primaryColor = MaterialColors.getColor(
+            ctx,
+            androidx.appcompat.R.attr.colorPrimary,
+            0xFF6750A4.toInt()
+        )
+        val rippleTyped = TypedValue()
+        ctx.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, rippleTyped, true)
+
+        val visibleItems = items.take(30)
+        val selectedIndices = linkedSetOf<Int>()
+        var selectedImageExt = "jpg"
+        val checkBoxes = mutableListOf<CheckBox>()
+        val cards = mutableListOf<MaterialCardView>()
 
         val outer = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(16))
         }
         val header = TextView(ctx).apply {
-            text = "${getString(R.string.browser_media_gallery_title)} (${items.size})"
+            text = "${getString(R.string.browser_media_gallery_title)} (${visibleItems.size})"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setTypeface(typeface, Typeface.BOLD)
-            setPadding(dp(4), 0, dp(4), dp(10))
+            setPadding(dp(4), 0, dp(4), dp(6))
         }
         AccessibilityUtil.setHeading(header, true)
         outer.addView(header)
+
+        val actionBar = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, dp(4), dp(8))
+        }
+        val selectedCountTv = TextView(ctx).apply {
+            text = getString(R.string.gallery_selected_count, 0)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            alpha = 0.85f
+        }
+        actionBar.addView(selectedCountTv, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        val btnSelectAll = MaterialButton(
+            ctx,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            text = getString(R.string.gallery_select_all)
+            minHeight = dp(38)
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+        }
+        actionBar.addView(btnSelectAll)
+        outer.addView(actionBar)
+
+        if (visibleItems.any { !it.isVideo }) {
+            val chipGroup = ChipGroup(ctx).apply {
+                isSingleSelection = true
+                isSelectionRequired = true
+                setPadding(dp(4), 0, dp(4), dp(8))
+            }
+            val radiusPx = 18f * density
+            QualityCapsuleUtil.IMAGE_FORMAT_CAPSULES.forEach { capsule ->
+                val chip = Chip(ctx).apply {
+                    id = View.generateViewId()
+                    text = capsule.label
+                    contentDescription = getString(R.string.select_option_desc, capsule.label)
+                    isCheckable = true
+                    isCheckedIconVisible = false
+                    chipCornerRadius = radiusPx
+                    isChecked = capsule.extension == selectedImageExt
+                    setOnClickListener {
+                        selectedImageExt = capsule.extension
+                    }
+                }
+                chipGroup.addView(chip)
+            }
+            outer.addView(chipGroup)
+        }
+
+        val btnDownloadSelected = MaterialButton(ctx).apply {
+            text = getString(R.string.gallery_download_selected, 0)
+            isEnabled = false
+            minimumHeight = dp(48)
+        }
+
+        fun syncSelectionUi() {
+            val count = selectedIndices.size
+            selectedCountTv.text = getString(R.string.gallery_selected_count, count)
+            btnDownloadSelected.text = getString(R.string.gallery_download_selected, count)
+            btnDownloadSelected.isEnabled = count > 0
+            btnSelectAll.setText(
+                if (count == visibleItems.size && visibleItems.isNotEmpty()) {
+                    R.string.gallery_clear_selection
+                } else {
+                    R.string.gallery_select_all
+                }
+            )
+            visibleItems.indices.forEach { i ->
+                val isChecked = i in selectedIndices
+                checkBoxes.getOrNull(i)?.isChecked = isChecked
+                cards.getOrNull(i)?.let { c ->
+                    c.strokeWidth = if (isChecked) dp(2) else 0
+                    c.strokeColor = primaryColor
+                    AccessibilityUtil.setStateDescription(
+                        c,
+                        getString(if (isChecked) R.string.state_selected else R.string.state_unselected)
+                    )
+                }
+            }
+        }
+
+        btnSelectAll.setOnClickListener {
+            if (selectedIndices.size == visibleItems.size) {
+                selectedIndices.clear()
+            } else {
+                selectedIndices.addAll(visibleItems.indices)
+            }
+            syncSelectionUi()
+        }
 
         val listCol = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
         }
 
-        items.take(30).forEach { media ->
+        visibleItems.forEachIndexed { idx, media ->
             val card = MaterialCardView(ctx).apply {
                 radius = dp(12).toFloat()
                 cardElevation = 0f
+                strokeColor = primaryColor
+                strokeWidth = 0
                 minimumHeight = dp(56)
-                setContentPadding(dp(10), dp(8), dp(10), dp(8))
+                setContentPadding(dp(8), dp(8), dp(6), dp(8))
                 isClickable = true
                 isFocusable = true
             }
             val displayTitle = media.title.ifBlank { media.subtitle }
-            card.contentDescription = getString(R.string.gallery_media_item_desc, displayTitle, media.subtitle)
-            AccessibilityUtil.setClickLabel(card, getString(R.string.context_options))
+            val typeLabel = getString(if (media.isVideo) R.string.video else R.string.image)
+            card.contentDescription = getString(
+                R.string.gallery_checkbox_item_desc,
+                typeLabel,
+                idx + 1,
+                visibleItems.size,
+                displayTitle,
+                media.subtitle
+            )
+            AccessibilityUtil.setStateDescription(card, getString(R.string.state_unselected))
 
             val row = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
+
+            val cb = CheckBox(ctx).apply {
+                isChecked = false
+                isClickable = false
+                isFocusable = false
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+            row.addView(cb, LinearLayout.LayoutParams(dp(36), dp(36)))
+
             val iv = ImageView(ctx).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 contentDescription = null
@@ -1806,7 +1937,7 @@ class BrowserFragment : Fragment() {
 
             val col = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(10), 0, dp(8), 0)
+                setPadding(dp(10), 0, dp(4), 0)
             }
             val t = TextView(ctx).apply {
                 text = displayTitle
@@ -1826,38 +1957,49 @@ class BrowserFragment : Fragment() {
             col.addView(s)
             row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
-            val dlIcon = ImageView(ctx).apply {
-                contentDescription = null
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                setImageResource(R.drawable.ic_down)
+            val optionsBtn = ImageButton(ctx).apply {
+                setImageResource(R.drawable.ic_more)
+                if (rippleTyped.resourceId != 0) setBackgroundResource(rippleTyped.resourceId)
+                contentDescription = getString(R.string.gallery_item_single_options_desc, displayTitle)
+                setOnClickListener {
+                    dialog.dismiss()
+                    val singleHit = if (media.isVideo) {
+                        HitMediaResult(
+                            seqId = ++touchSeq,
+                            videoUrls = listOf(media.url),
+                            postUrl = media.postUrl.ifBlank { currentUrl },
+                            pageTitle = media.title,
+                            pageThumb = media.thumbUrl
+                        )
+                    } else {
+                        HitMediaResult(
+                            seqId = ++touchSeq,
+                            imageUrl = media.url,
+                            imageWidth = media.width,
+                            imageHeight = media.height,
+                            imageTitle = media.title,
+                            postUrl = media.postUrl.ifBlank { currentUrl },
+                            pageTitle = media.title,
+                            pageThumb = media.url
+                        )
+                    }
+                    showMediaContextBottomSheet(singleHit)
+                }
             }
-            row.addView(dlIcon, LinearLayout.LayoutParams(dp(22), dp(22)))
+            row.addView(optionsBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
 
             card.addView(row)
             card.setOnClickListener {
-                dialog.dismiss()
-                val singleHit = if (media.isVideo) {
-                    HitMediaResult(
-                        seqId = ++touchSeq,
-                        videoUrls = listOf(media.url),
-                        postUrl = media.postUrl.ifBlank { currentUrl },
-                        pageTitle = media.title,
-                        pageThumb = media.thumbUrl
-                    )
+                if (idx in selectedIndices) {
+                    selectedIndices.remove(idx)
                 } else {
-                    HitMediaResult(
-                        seqId = ++touchSeq,
-                        imageUrl = media.url,
-                        imageWidth = media.width,
-                        imageHeight = media.height,
-                        imageTitle = media.title,
-                        postUrl = media.postUrl.ifBlank { currentUrl },
-                        pageTitle = media.title,
-                        pageThumb = media.url
-                    )
+                    selectedIndices.add(idx)
                 }
-                showMediaContextBottomSheet(singleHit)
+                syncSelectionUi()
             }
+
+            checkBoxes.add(cb)
+            cards.add(card)
 
             if (media.thumbUrl.startsWith("http") || media.thumbUrl.startsWith("data:image/", ignoreCase = true)) {
                 viewLifecycleOwner.lifecycleScope.launch {
@@ -1882,12 +2024,111 @@ class BrowserFragment : Fragment() {
         }
         val scrollLp = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(380)
+            dp(320)
         )
         outer.addView(scroll, scrollLp)
 
+        btnDownloadSelected.setOnClickListener {
+            val chosen = selectedIndices.sorted().mapNotNull { visibleItems.getOrNull(it) }
+            if (chosen.isEmpty()) return@setOnClickListener
+            dialog.dismiss()
+            queueBatchGalleryDownloads(chosen, selectedImageExt, currentUrl)
+        }
+        val btnLp = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            topMargin = dp(10)
+        }
+        outer.addView(btnDownloadSelected, btnLp)
+
         dialog.setContentView(outer)
         dialog.show()
+    }
+
+    private fun queueBatchGalleryDownloads(
+        selected: List<GalleryMediaItem>,
+        imageContainer: String,
+        currentUrl: String
+    ) {
+        val ctx = context?.applicationContext ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val downloadItems = mutableListOf<DownloadItem>()
+            val rootDomain = DomainUtil.normalizeRootDomain(currentUrl).orEmpty()
+            val domainDisplay = DomainUtil.displayNameForDomain(rootDomain, null)
+            val total = selected.size
+
+            selected.forEachIndexed { idx, media ->
+                if (media.isVideo) {
+                    val singleVideoHit = HitMediaResult(
+                        seqId = ++touchSeq,
+                        videoUrls = listOf(media.url),
+                        postUrl = media.postUrl.ifBlank { currentUrl },
+                        pageTitle = media.title,
+                        pageThumb = media.thumbUrl
+                    )
+                    val prepared = buildUnifiedResultItem(ctx, singleVideoHit, currentUrl, DownloadType.video)
+                    val isEmptyFeed = BrowserMediaUtil.isFeedOrListingUrl(prepared.resultItem.url) &&
+                        prepared.resultItem.formats.isEmpty()
+                    if (!isEmptyFeed) {
+                        val dwl = withContext(Dispatchers.IO) {
+                            downloadViewModel.createDownloadItemFromResult(
+                                prepared.resultItem,
+                                givenType = DownloadType.video
+                            )
+                        }
+                        downloadItems.add(dwl)
+                    }
+                } else {
+                    val baseTitle = media.title
+                        .takeIf { it.isNotBlank() && !BrowserMediaUtil.isGenericPlaceholderTitle(it, domainDisplay) }
+                        ?: domainDisplay.ifBlank { "Image" }
+                    val uniqueTitle = if (total > 1) "$baseTitle (${idx + 1}/$total)" else baseTitle
+                    val res = BrowserMediaUtil.buildImageOnlyResultItem(
+                        url = media.url,
+                        imageUrl = media.url,
+                        title = uniqueTitle,
+                        author = domainDisplay,
+                        website = rootDomain
+                    )
+                    val dwl = withContext(Dispatchers.IO) {
+                        downloadViewModel.createDownloadItemFromResult(
+                            res,
+                            givenType = DownloadType.image
+                        ).apply {
+                            container = imageContainer
+                            format.container = imageContainer
+                            format.url = media.url
+                            thumb = media.url
+                        }
+                    }
+                    downloadItems.add(dwl)
+                }
+            }
+
+            if (downloadItems.isEmpty()) {
+                if (isAdded) {
+                    Toast.makeText(requireContext(), R.string.no_image_available, Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
+            val queueRes = withContext(Dispatchers.IO) {
+                downloadViewModel.queueDownloads(downloadItems)
+            }
+            if (!isAdded) return@launch
+            val queuedCount = (downloadItems.size - queueRes.duplicateDownloadIDs.size).coerceAtLeast(0)
+            when {
+                queueRes.message.isNotBlank() ->
+                    Toast.makeText(requireContext(), queueRes.message, Toast.LENGTH_LONG).show()
+                queuedCount > 0 ->
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.batch_download_started, queuedCount),
+                        Toast.LENGTH_SHORT
+                    ).show()
+            }
+        }
     }
 
     private fun mergeHitWithFallback(hit: HitMediaResult, currentUrl: String): HitMediaResult {

@@ -256,4 +256,39 @@ class BrowserMediaUtilTest {
         assertEquals("jpg", BrowserMediaUtil.inferImageExtensionFromUrl("https://pbs.twimg.com/media/AbCd?format=jpg&name=large"))
         assertEquals("png", BrowserMediaUtil.inferImageExtensionFromUrl("https://cdn.example.com/pic", "image/png; charset=utf-8"))
     }
+
+    @Test
+    fun `deduplicateCarouselImageUrls removes size variants and logos while preserving slides`() {
+        val raw = listOf(
+            "https://static.cdninstagram.com/rsrc.php/v3/yx/r/logo.png",
+            "https://scontent-mia3-1.cdninstagram.com/v/t51.2885-15/s640x640/111111_n.jpg",
+            "https://scontent-mia3-1.cdninstagram.com/v/t51.2885-15/s1080x1080/111111_n.jpg",
+            "https://scontent-mia3-1.cdninstagram.com/v/t51.2885-15/s1080x1080/222222_n.jpg",
+            "https://pbs.twimg.com/media/AbCd?format=jpg&name=small",
+            "https://pbs.twimg.com/media/AbCd?format=jpg&name=orig",
+            "https://cdn.example.com/video.mp4"
+        )
+        val deduped = BrowserMediaUtil.deduplicateCarouselImageUrls(raw)
+        assertEquals(3, deduped.size)
+        assertTrue(deduped.contains("https://scontent-mia3-1.cdninstagram.com/v/t51.2885-15/s1080x1080/111111_n.jpg"))
+        assertTrue(deduped.contains("https://scontent-mia3-1.cdninstagram.com/v/t51.2885-15/s1080x1080/222222_n.jpg"))
+        assertTrue(deduped.contains("https://pbs.twimg.com/media/AbCd?format=jpg&name=orig"))
+        assertFalse(deduped.any { it.contains("rsrc.php") || it.contains("video.mp4") })
+
+        val items = BrowserMediaUtil.buildCarouselImageResultItems(
+            pageUrl = "https://www.instagram.com/p/CAROUSEL1/",
+            imageUrls = raw,
+            title = "Photo by alice"
+        )
+        assertEquals(3, items.size)
+        assertEquals("Photo by alice (1/3)", items[0].title)
+        assertEquals("Photo by alice (2/3)", items[1].title)
+        assertEquals("Photo by alice (3/3)", items[2].title)
+        assertEquals("https://www.instagram.com/p/CAROUSEL1/", items[0].playlistURL)
+        assertEquals("Photo by alice", items[1].playlistTitle)
+        assertEquals(2, items[1].playlistIndex)
+        assertEquals(items[0].thumb, items[0].url)
+        assertEquals(items[1].thumb, items[1].url)
+        assertTrue(BrowserMediaUtil.isImageOnlyResult(items[0]))
+    }
 }

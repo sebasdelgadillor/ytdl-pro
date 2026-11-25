@@ -614,4 +614,121 @@ object BrowserMediaUtil {
             playlistURL = ""
         )
     }
+
+    private val CAROUSEL_SIZE_SEGMENT_REGEX = Regex(
+        """/(?:[sp]\d+x\d+|c\d+\.\d+\.\d+\.\d+[a-z]?|dst-jpg_[^/]+)(?=/)""",
+        RegexOption.IGNORE_CASE
+    )
+    private val CAROUSEL_SIZING_QUERY_PARAM_REGEX = Regex(
+        """^(?:name|format|fm|w|h|width|height|size|quality|q|resize|fit|crop|stp|auto)$""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private fun canonicalCarouselAssetKey(url: String): String {
+        val trimmed = url.trim()
+        val parsed = runCatching { URI(trimmed) }.getOrNull() ?: return trimmed.lowercase(Locale.US)
+        val host = parsed.host?.lowercase(Locale.US).orEmpty()
+        val rawPath = (parsed.path ?: "").lowercase(Locale.US)
+        val normalizedPath = CAROUSEL_SIZE_SEGMENT_REGEX.replace(rawPath, "")
+        val rawQuery = parsed.rawQuery.orEmpty()
+        if (host == "pbs.twimg.com" && normalizedPath.contains("/media/")) {
+            return "$host$normalizedPath"
+        }
+        val keptParams = rawQuery.split('&')
+            .filter { it.isNotBlank() }
+            .filterNot { param ->
+                val key = param.substringBefore('=').trim()
+                CAROUSEL_SIZING_QUERY_PARAM_REGEX.matches(key)
+            }
+            .sorted()
+            .joinToString("&")
+        return if (keptParams.isNotEmpty()) "$host$normalizedPath?$keptParams" else "$host$normalizedPath"
+    }
+
+    private fun carouselVariantPreferenceScore(url: String): Int {
+        val lower = url.lowercase(Locale.US)
+        var score = scoreImageCandidate(url, 0, 0, "")
+        when {
+            lower.contains("name=orig") -> score += 500
+            lower.contains("name=large") -> score += 300
+            lower.contains("s1080x1080") || lower.contains("w=1080") || lower.contains("1080") -> score += 200
+            lower.contains("s640x640") -> score += 100
+        }
+        return score * 10 + url.length.coerceAtMost(500)
+    }
+
+    fun deduplicateCarouselImageUrls(urls: List<String>): List<String> {
+        val byKey = LinkedHashMap<String, String>()
+        for (raw in urls) {
+            val trimmed = raw.trim()
+            if (trimmed.isEmpty()) continue
+            val isDataImage = trimmed.startsWith("data:image/", ignoreCase = true)
+            if (!isDataImage && !isLikelyContentImageUrl(trimmed)) continue
+            if (isGenericSiteImageUrl(trimmed)) continue
+
+            val key = if (isDataImage) trimmed else canonicalCarouselAssetKey(trimmed)
+            val existing = byKey[key]
+            if (existing == null) {
+                byKey[key] = trimmed
+            } else if (!isDataImage && carouselVariantPreferenceScore(trimmed) > carouselVariantPreferenceScore(existing)) {
+                byKey[key] = trimmed
+            }
+        }
+        return byKey.values.toList()
+    }
+
+    fun buildCarouselImageResultItems(
+        pageUrl: String,
+        imageUrls: List<String>,
+        title: String = "",
+        author: String = "",
+        website: String = "",
+        mimeType: String = ""
+    ): List<ResultItem> {
+        val deduped = deduplicateCarouselImageUrls(imageUrls)
+        if (deduped.isEmpty()) return emptyList()
+        if (deduped.size == 1) {
+            return listOf(
+                buildImageOnlyResultItem(
+                    url = pageUrl,
+                    imageUrl = deduped.first(),
+                    title = title,
+                    author = author,
+                    website = website,
+                    mimeType = mimeType
+                )
+            )
+        }
+
+        val normalizedSite = website.ifBlank { DomainUtil.normalizeRootDomain(pageUrl).orEmpty() }
+        val displayName = WebRulesRegistry.current().domains.displayNames[normalizedSite].orEmpty()
+        val baseTitle = inferCleanImageTitle(pageUrl, title, displayName)
+        return deduped.mapIndexed { idx, imgUrl ->
+            val ext = inferImageExtensionFromUrl(imgUrl, mimeType)
+            ResultItem(
+                id = 0,
+                url = imgUrl,
+                title = "$baseTitle (${idx + 1}/${deduped.size})",
+                author = author.trim(),
+                duration = "",
+                thumb = imgUrl,
+                website = normalizedSite,
+                playlistTitle = baseTitle,
+                playlistIndex = idx + 1,
+                formats = arrayListOf(
+                    Format(
+                        format_id = IMAGE_ONLY_FORMAT_ID,
+                        container = ext,
+                        vcodec = "none",
+                        acodec = "none",
+                        format_note = "image_only",
+                        url = imgUrl
+                    )
+                ),
+                urls = "",
+                chapters = ArrayList(),
+                playlistURL = pageUrl
+            )
+        }
+    }
 }

@@ -224,6 +224,10 @@ class ConfigureMultipleDownloadsAdapter(onItemClickListener: OnItemClickListener
                 btn.setIconResource(R.drawable.ic_video)
                 btn.contentDescription = activity.getString(R.string.video)
             }
+            DownloadType.image -> {
+                btn.setIconResource(R.drawable.ic_image)
+                btn.contentDescription = activity.getString(R.string.image)
+            }
             else -> {
                 btn.setIconResource(R.drawable.ic_terminal)
                 btn.contentDescription = activity.getString(R.string.command)

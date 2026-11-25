@@ -309,8 +309,12 @@ object LocalFallbackEngine {
         }
 
     suspend fun extractResultItem(context: Context, url: String): ResultItem? {
+        return extractResultItems(context, url).firstOrNull()
+    }
+
+    suspend fun extractResultItems(context: Context, url: String): List<ResultItem> {
         if (BrowserMediaUtil.isDirectStaticImageFile(url)) {
-            return BrowserMediaUtil.buildImageOnlyResultItem(url = url, imageUrl = url)
+            return listOf(BrowserMediaUtil.buildImageOnlyResultItem(url = url, imageUrl = url))
         }
 
         val info = discoverFallbackInfo(
@@ -333,27 +337,28 @@ object LocalFallbackEngine {
                 DomainUtil.normalizeRootDomain(url).orEmpty()
             }
 
-            return ResultItem(
-                id = 0,
-                url = url,
-                title = title,
-                author = info.author,
-                duration = durationStr,
-                thumb = info.thumbnail,
-                website = website,
-                playlistTitle = "",
-                formats = formats,
-                urls = "",
-                chapters = ArrayList(),
-                playlistURL = ""
+            return listOf(
+                ResultItem(
+                    id = 0,
+                    url = url,
+                    title = title,
+                    author = info.author,
+                    duration = durationStr,
+                    thumb = info.thumbnail,
+                    website = website,
+                    playlistTitle = "",
+                    formats = formats,
+                    urls = "",
+                    chapters = ArrayList(),
+                    playlistURL = ""
+                )
             )
         }
 
-        val bestImg = info.imageUrls.firstOrNull { !BrowserMediaUtil.isGenericSiteImageUrl(it) }
-            ?: return null
-        return BrowserMediaUtil.buildImageOnlyResultItem(
-            url = url,
-            imageUrl = bestImg,
+        if (info.imageUrls.isEmpty()) return emptyList()
+        return BrowserMediaUtil.buildCarouselImageResultItems(
+            pageUrl = url,
+            imageUrls = info.imageUrls,
             title = info.title,
             author = info.author,
             website = info.website,
