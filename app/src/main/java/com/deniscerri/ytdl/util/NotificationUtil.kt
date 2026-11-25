@@ -251,6 +251,9 @@ class NotificationUtil(var context: Context) {
             DownloadType.command -> {
                 R.drawable.ic_terminal
             }
+            DownloadType.image -> {
+                R.drawable.ic_image
+            }
 
             else -> R.drawable.ic_launcher_foreground_large
         }

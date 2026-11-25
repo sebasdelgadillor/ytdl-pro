@@ -36,6 +36,7 @@ import com.deniscerri.ytdl.database.viewmodel.DownloadViewModel
 import com.deniscerri.ytdl.database.viewmodel.HistoryViewModel
 import com.deniscerri.ytdl.database.viewmodel.ResultViewModel
 import com.deniscerri.ytdl.ui.BaseActivity
+import com.deniscerri.ytdl.util.BrowserMediaUtil
 import com.deniscerri.ytdl.util.Extensions.extractURL
 import com.deniscerri.ytdl.util.ThemeUtil
 import kotlinx.coroutines.CoroutineScope
@@ -188,18 +189,27 @@ class ShareActivity : BaseActivity() {
 
                 if (existingResults.isEmpty() || existingResults.size > 1) {
                     resultViewModel.deleteAll()
-                    result = downloadViewModel.createEmptyResultItem(inputQuery)
+                    result = if (BrowserMediaUtil.isDirectStaticImageFile(inputQuery)) {
+                        BrowserMediaUtil.buildImageOnlyResultItem(inputQuery, inputQuery)
+                    } else {
+                        downloadViewModel.createEmptyResultItem(inputQuery)
+                    }
                 }else{
                     result = existingResults.first()
                 }
 
-                val downloadType = DownloadType.valueOf(type ?: downloadViewModel.getDownloadType(url = result.url).toString())
+                val downloadType = if (type != null) {
+                    DownloadType.valueOf(type)
+                } else {
+                    downloadViewModel.resolveDownloadTypeForResult(result, preferredType = null)
+                }
                 if (sharedPreferences.getBoolean("download_card", true) && !background){
 
                     downloadCardViewModel.setResultItem(result)
                     downloadCardViewModel.setDownloadItem(null)
                     val bundle = Bundle()
                     bundle.putSerializable("type", downloadType)
+                    bundle.putBoolean("allow_dynamic_type_switch", type == null)
                     navController.setGraph(R.navigation.share_nav_graph, bundle)
                 }else{
                     Toast.makeText(this@ShareActivity, "${getString(R.string.downloading)} $inputQuery", Toast.LENGTH_SHORT).show()

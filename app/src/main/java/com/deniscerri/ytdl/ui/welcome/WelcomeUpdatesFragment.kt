@@ -15,6 +15,7 @@ import com.deniscerri.ytdl.R
 import com.deniscerri.ytdl.database.viewmodel.WelcomeViewModel
 import com.deniscerri.ytdl.ui.more.settings.updating.setUpChannels
 import com.deniscerri.ytdl.util.UiUtil
+import com.deniscerri.ytdl.util.UpdateUtil
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -34,9 +35,9 @@ class WelcomeUpdatesFragment : Fragment(R.layout.fragment_welcome_updates) {
         bindSwitch(appRow, R.drawable.ic_update_app, R.string.update_app, R.string.update_app_summary, viewModel.updateApp) {
             viewModel.updateApp = it
         }
-        // app updates are only offered by the GitHub build
-        appRow.isVisible = BuildConfig.FLAVOR == "github"
-        view.findViewById<View>(R.id.update_app_header).isVisible = appRow.isVisible
+        val canSelfUpdateApp = UpdateUtil.isAppSelfUpdateConfigured() && BuildConfig.FLAVOR == "github"
+        appRow.isVisible = canSelfUpdateApp
+        view.findViewById<View>(R.id.update_app_header).isVisible = canSelfUpdateApp
 
         bindSwitch(view.findViewById(R.id.update_ytdl), R.drawable.ic_update, R.string.auto_update_ytdlp, R.string.auto_update_ytdlp_summary, viewModel.autoUpdateYtdlp) {
             viewModel.autoUpdateYtdlp = it
@@ -86,8 +87,7 @@ class WelcomeUpdatesFragment : Fragment(R.layout.fragment_welcome_updates) {
     private fun setupBackgroundTypes(row: View) {
         var titles = resources.getStringArray(R.array.background_update_check_types)
         var values = resources.getStringArray(R.array.background_update_check_types_values)
-        // app updates are only offered by the GitHub build
-        if (BuildConfig.FLAVOR != "github") {
+        if (!UpdateUtil.isAppSelfUpdateConfigured() || BuildConfig.FLAVOR != "github") {
             titles = titles.drop(1).toTypedArray()
             values = values.drop(1).toTypedArray()
         }

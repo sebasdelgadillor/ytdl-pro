@@ -32,13 +32,18 @@ import com.deniscerri.ytdl.database.viewmodel.DownloadViewModel
 import com.deniscerri.ytdl.database.viewmodel.FormatViewModel
 import com.deniscerri.ytdl.database.viewmodel.ResultViewModel
 import com.deniscerri.ytdl.database.viewmodel.YTDLPViewModel
+import com.deniscerri.ytdl.util.AccessibilityUtil
+import com.deniscerri.ytdl.util.BrowserMediaUtil
 import com.deniscerri.ytdl.util.Extensions.applyFilenameTemplateForCuts
 import com.deniscerri.ytdl.util.Extensions.createBadge
 import com.deniscerri.ytdl.util.FileUtil
 import com.deniscerri.ytdl.util.FormatUtil
+import com.deniscerri.ytdl.util.QualityCapsuleUtil
 import com.deniscerri.ytdl.util.UiUtil
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputLayout
@@ -94,7 +99,7 @@ class DownloadAudioFragment(private var resultItem: ResultItem? = null, private 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         lifecycleScope.launch {
             downloadItem = withContext(Dispatchers.IO) {
-                if (savedInstanceState?.containsKey("updated") == true) {
+                if (savedInstanceState?.containsKey("updated") == true && ::downloadItem.isInitialized) {
                     downloadItem.apply {
                         title = resultItem!!.title
                         author = resultItem!!.author
@@ -122,7 +127,8 @@ class DownloadAudioFragment(private var resultItem: ResultItem? = null, private 
             try {
                 title = view.findViewById(R.id.title_textinput)
                 title.visibility = if (shownFields.contains("title") && !nonSpecific) View.VISIBLE else View.GONE
-                if (title.editText?.text?.isEmpty() == true){
+                val existingTitle = title.editText?.text?.toString().orEmpty()
+                if (existingTitle.isEmpty() || (savedInstanceState?.containsKey("updated") == true && BrowserMediaUtil.isGenericPlaceholderTitle(existingTitle))){
                     title.editText!!.setText(downloadItem.title)
                     title.endIconMode = END_ICON_NONE
                 }
@@ -136,7 +142,8 @@ class DownloadAudioFragment(private var resultItem: ResultItem? = null, private 
 
                 author = view.findViewById(R.id.author_textinput)
                 author.visibility = if (shownFields.contains("author") && !nonSpecific) View.VISIBLE else View.GONE
-                if (author.editText?.text?.isEmpty() == true){
+                val existingAuthor = author.editText?.text?.toString().orEmpty()
+                if (existingAuthor.isEmpty() || (savedInstanceState?.containsKey("updated") == true && BrowserMediaUtil.isGenericPlaceholderTitle(existingAuthor))){
                     author.editText!!.setText(downloadItem.author)
                     author.endIconMode = END_ICON_NONE
                 }
@@ -149,16 +156,28 @@ class DownloadAudioFragment(private var resultItem: ResultItem? = null, private 
                 })
 
                 if (savedInstanceState?.containsKey("updated") == true){
-                    if (!listOf(resultItem?.title, downloadItem.title).contains(title.editText?.text.toString())){
-                        title.endIconMode = TextInputLayout.END_ICON_CUSTOM
-                        title.endIconDrawable = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_refresh)
-                        downloadItem.title = title.editText?.text.toString()
+                    val currentUiTitle = title.editText?.text.toString()
+                    if (!listOf(resultItem?.title, downloadItem.title).contains(currentUiTitle)){
+                        if (BrowserMediaUtil.isGenericPlaceholderTitle(currentUiTitle)) {
+                            title.editText?.setText(downloadItem.title)
+                            title.endIconMode = END_ICON_NONE
+                        } else {
+                            title.endIconMode = TextInputLayout.END_ICON_CUSTOM
+                            title.endIconDrawable = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_refresh)
+                            downloadItem.title = currentUiTitle
+                        }
                     }
 
-                    if (!listOf(resultItem?.author, downloadItem.author).contains(author.editText?.text.toString())){
-                        author.endIconMode = TextInputLayout.END_ICON_CUSTOM
-                        author.endIconDrawable = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_refresh)
-                        downloadItem.author = author.editText?.text.toString()
+                    val currentUiAuthor = author.editText?.text.toString()
+                    if (!listOf(resultItem?.author, downloadItem.author).contains(currentUiAuthor)){
+                        if (BrowserMediaUtil.isGenericPlaceholderTitle(currentUiAuthor)) {
+                            author.editText?.setText(downloadItem.author)
+                            author.endIconMode = END_ICON_NONE
+                        } else {
+                            author.endIconMode = TextInputLayout.END_ICON_CUSTOM
+                            author.endIconDrawable = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_refresh)
+                            downloadItem.author = currentUiAuthor
+                        }
                     }
                 }
 
@@ -215,8 +234,10 @@ class DownloadAudioFragment(private var resultItem: ResultItem? = null, private 
                 if (formats.isEmpty()) formats.addAll(downloadItem.allFormats.filter { it.vcodec.isBlank() || it.vcodec == "none"})
 
                 val containers = requireContext().resources.getStringArray(R.array.audio_containers)
-                var containerPreference = sharedPreferences.getString("audio_format", "Default")
-                if (containerPreference == "Default") containerPreference = getString(R.string.defaultValue)
+                var containerPreference = sharedPreferences.getString("audio_format", "mp3")
+                if (containerPreference.isNullOrBlank() || containerPreference == "Default") {
+                    containerPreference = "mp3"
+                }
                 val container = view.findViewById<TextInputLayout>(R.id.downloadContainer)
                 container.visibility = if (shownFields.contains("container")) View.VISIBLE else View.GONE
                 if (nonSpecific){
@@ -268,15 +289,37 @@ class DownloadAudioFragment(private var resultItem: ResultItem? = null, private 
                     )
                 )
 
-                if (currentDownloadItem == null || !containers.contains(downloadItem.container.ifEmpty { getString(R.string.defaultValue) })){
+                if (currentDownloadItem == null || downloadItem.container.isBlank() || !containers.contains(downloadItem.container.ifEmpty { getString(R.string.defaultValue) })){
                     downloadItem.container = if (containerPreference == getString(R.string.defaultValue)) "" else containerPreference!!
                 }
                 containerAutoCompleteTextView.setText(downloadItem.container.ifEmpty { getString(R.string.defaultValue) }, false)
+
+                val audioBadge = view.findViewById<TextView>(R.id.audio_standard_badge)
+                audioBadge?.text = downloadItem.container.ifBlank { "mp3" }.uppercase()
+
+                val audioAdvancedContainer = view.findViewById<LinearLayout>(R.id.audio_advanced_container)
+                val toggleAdvancedBtn = view.findViewById<MaterialButton>(R.id.btn_toggle_advanced_audio)
+                AccessibilityUtil.setStateDescription(
+                    toggleAdvancedBtn,
+                    getString(if (audioAdvancedContainer?.isVisible == true) R.string.state_expanded else R.string.state_collapsed)
+                )
+                toggleAdvancedBtn?.setOnClickListener {
+                    val nextVisible = audioAdvancedContainer?.isVisible != true
+                    audioAdvancedContainer?.isVisible = nextVisible
+                    toggleAdvancedBtn.setText(
+                        if (nextVisible) R.string.hide_advanced_options else R.string.advanced_options
+                    )
+                    AccessibilityUtil.setStateDescription(
+                        toggleAdvancedBtn,
+                        getString(if (nextVisible) R.string.state_expanded else R.string.state_collapsed)
+                    )
+                }
 
                 (container!!.editText as AutoCompleteTextView?)!!.onItemClickListener =
                     AdapterView.OnItemClickListener { _: AdapterView<*>?, _: View?, index: Int, _: Long ->
                         downloadItem.container = containers[index]
                         if (containers[index] == getString(R.string.defaultValue)) downloadItem.container = ""
+                        audioBadge?.text = downloadItem.container.ifBlank { "MP3" }.uppercase()
                         if (downloadItem.container == "wav") {
                             if (selectedThumbnailPrefs == null) {
                                 selectedThumbnailPrefs = downloadItem.audioPreferences.embedThumb to downloadItem.audioPreferences.cropThumb
@@ -299,6 +342,8 @@ class DownloadAudioFragment(private var resultItem: ResultItem? = null, private 
                             selectedThumbnailPrefs = null
                         }
                     }
+
+                renderAudioCapsules(view)
 
 
                 view.findViewById<LinearLayout>(R.id.adjust).apply {
@@ -436,6 +481,9 @@ class DownloadAudioFragment(private var resultItem: ResultItem? = null, private 
         }
     }
 
+    fun getDownloadItemOrNull(): DownloadItem? =
+        if (::downloadItem.isInitialized) downloadItem else null
+
     override fun updateTitleAuthor(t: String, a: String){
         downloadItem.title = t
         downloadItem.author = a
@@ -488,6 +536,80 @@ class DownloadAudioFragment(private var resultItem: ResultItem? = null, private 
         val formatCard = view?.findViewById<MaterialCardView>(R.id.format_card_constraintLayout) ?: return
         val filesize = UiUtil.populateFormatCard(requireContext(), formatCard, preferredFormat, null, showSize = downloadItem.downloadSections.isEmpty())
         formatViewModel.checkFreeSpace(filesize, downloadItem.downloadPath)
+        view?.let { renderAudioCapsules(it) }
+    }
+
+    private fun renderAudioCapsules(rootView: View) {
+        if (!isAdded || !::downloadItem.isInitialized) return
+        val chipGroup = rootView.findViewById<ChipGroup>(R.id.audio_quality_capsules) ?: return
+        val summaryText = rootView.findViewById<TextView>(R.id.audio_selected_summary)
+        val formatCard = rootView.findViewById<MaterialCardView>(R.id.format_card_constraintLayout)
+
+        val durationSec = QualityCapsuleUtil.parseDurationToSeconds(downloadItem.duration)
+        val capsules = QualityCapsuleUtil.buildAudioQualityCapsules(downloadItem.allFormats, durationSec)
+        chipGroup.removeAllViews()
+        if (capsules.isEmpty()) return
+
+        val currentBitrateNum = downloadItem.audioPreferences.bitrate
+            .replace(Regex("[^0-9]"), "")
+            .toIntOrNull()
+        val selectedCapsule = capsules.firstOrNull { it.bitrateKbps == currentBitrateNum }
+            ?: capsules.firstOrNull { it.bitrateKbps == 192 }
+            ?: capsules.first()
+
+        val radiusPx = 20f * resources.displayMetrics.density
+        capsules.forEach { capsule ->
+            val sizeStr = QualityCapsuleUtil.formatCompactSize(capsule.estimatedBytes)
+            val labelText = if (sizeStr.isNotEmpty()) {
+                "${capsule.label} · $sizeStr"
+            } else {
+                capsule.label
+            }
+            val chip = Chip(requireContext()).apply {
+                id = View.generateViewId()
+                text = labelText
+                contentDescription = getString(R.string.select_option_desc, labelText)
+                isCheckable = true
+                isCheckedIconVisible = false
+                chipCornerRadius = radiusPx
+                isChecked = capsule == selectedCapsule
+                setOnClickListener {
+                    applyAudioCapsule(capsule, summaryText, formatCard)
+                }
+            }
+            chipGroup.addView(chip)
+        }
+
+        applyAudioCapsule(selectedCapsule, summaryText, formatCard)
+    }
+
+    private fun applyAudioCapsule(
+        capsule: QualityCapsuleUtil.AudioCapsule,
+        summaryText: TextView?,
+        formatCard: MaterialCardView?
+    ) {
+        downloadItem.audioPreferences.bitrate = "${capsule.bitrateKbps}k"
+        downloadItem.container = downloadItem.container.ifBlank { "mp3" }
+        downloadItem.format = capsule.audioFormat
+
+        val sizeStr = QualityCapsuleUtil.formatCompactSize(capsule.estimatedBytes)
+        val containerUpper = downloadItem.container.ifBlank { "MP3" }.uppercase()
+        summaryText?.text = if (sizeStr.isNotEmpty()) {
+            "${capsule.label} · $containerUpper · $sizeStr"
+        } else {
+            "${capsule.label} · $containerUpper"
+        }
+
+        if (formatCard != null) {
+            val totalSize = UiUtil.populateFormatCard(
+                requireContext(),
+                formatCard,
+                downloadItem.format,
+                null,
+                showSize = downloadItem.downloadSections.isEmpty()
+            )
+            formatViewModel.checkFreeSpace(totalSize, downloadItem.downloadPath)
+        }
     }
 
     override fun updateUI(res: ResultItem?){

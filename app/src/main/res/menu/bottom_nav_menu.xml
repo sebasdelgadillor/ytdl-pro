@@ -5,6 +5,10 @@
         android:icon="@drawable/ic_home"
         android:id="@+id/homeFragment"/>
 
+    <item android:title="@string/browser"
+        android:icon="@drawable/ic_browser"
+        android:id="@+id/browserFragment"/>
+
     <item android:title="@string/downloads"
         android:icon="@drawable/ic_downloads"
         android:id="@+id/historyFragment"/>

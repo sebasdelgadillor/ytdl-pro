@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.deniscerri.ytdl.R
 import com.deniscerri.ytdl.database.enums.DownloadType
 import com.deniscerri.ytdl.database.models.ResultItem
+import com.deniscerri.ytdl.util.BrowserMediaUtil
 import com.deniscerri.ytdl.util.DragSelectTouchListener
 import com.deniscerri.ytdl.util.Extensions.loadThumbnail
 import com.deniscerri.ytdl.util.Extensions.popup
@@ -88,16 +89,30 @@ class HomeAdapter(onItemClickListener: OnItemClickListener, activity: Activity) 
 
         // BUTTONS ----------------------------------
         val videoURL = video.url
+        val isImageOnly = BrowserMediaUtil.isImageOnlyResult(video)
         val musicBtn = card.findViewById<MaterialButton>(R.id.download_music)
-        musicBtn.tag = "$videoURL##audio"
-        musicBtn.setTag(R.id.cancelDownload, "false")
-        musicBtn.setOnClickListener { onItemClickListener.onButtonClick(video, DownloadType.audio) }
-        musicBtn.setOnLongClickListener{ onItemClickListener.onLongButtonClick(video, DownloadType.audio); true}
         val videoBtn = card.findViewById<MaterialButton>(R.id.download_video)
-        videoBtn.tag = "$videoURL##video"
-        videoBtn.setTag(R.id.cancelDownload, "false")
-        videoBtn.setOnClickListener { onItemClickListener.onButtonClick(video, DownloadType.video) }
-        videoBtn.setOnLongClickListener{ onItemClickListener.onLongButtonClick(video, DownloadType.video); true}
+        if (isImageOnly) {
+            musicBtn.visibility = View.GONE
+            videoBtn.tag = "$videoURL##image"
+            videoBtn.setTag(R.id.cancelDownload, "false")
+            videoBtn.setIconResource(R.drawable.ic_image)
+            videoBtn.contentDescription = activity.getString(R.string.image)
+            videoBtn.setOnClickListener { onItemClickListener.onButtonClick(video, DownloadType.image) }
+            videoBtn.setOnLongClickListener { onItemClickListener.onLongButtonClick(video, DownloadType.image); true }
+        } else {
+            musicBtn.visibility = View.VISIBLE
+            musicBtn.tag = "$videoURL##audio"
+            musicBtn.setTag(R.id.cancelDownload, "false")
+            musicBtn.setOnClickListener { onItemClickListener.onButtonClick(video, DownloadType.audio) }
+            musicBtn.setOnLongClickListener{ onItemClickListener.onLongButtonClick(video, DownloadType.audio); true}
+            videoBtn.tag = "$videoURL##video"
+            videoBtn.setTag(R.id.cancelDownload, "false")
+            videoBtn.setIconResource(R.drawable.ic_video)
+            videoBtn.contentDescription = activity.getString(R.string.video)
+            videoBtn.setOnClickListener { onItemClickListener.onButtonClick(video, DownloadType.video) }
+            videoBtn.setOnLongClickListener{ onItemClickListener.onLongButtonClick(video, DownloadType.video); true}
+        }
 
 
         // PROGRESS BAR ----------------------------------------------------

@@ -128,7 +128,7 @@ class BgUtilsPoTokenGeneratorService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("YTDLnis BgUtils POT Provider\n")
+            .setContentTitle("YTDL Pro BgUtils POT Provider\n")
             .setContentText(description)
             .setSmallIcon(R.drawable.baseline_token_24)
             .setPriority(NotificationCompat.PRIORITY_LOW)

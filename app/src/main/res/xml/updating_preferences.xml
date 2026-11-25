@@ -22,6 +22,11 @@
             app:title="@string/packages" />
 
         <Preference
+            app:icon="@drawable/baseline_settings_suggest_24"
+            app:key="web_rules_manage"
+            app:title="@string/web_rules_title" />
+
+        <Preference
             app:icon="@drawable/baseline_install_mobile_24"
             app:key="apk_install_method"
             app:title="@string/installation_method" />

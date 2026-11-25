@@ -1,10 +1,10 @@
 package com.deniscerri.ytdl
 
-import android.app.ActionBar.LayoutParams
 import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Build
@@ -13,13 +13,17 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowInsets
+import android.webkit.WebChromeClient
 import android.widget.CheckBox
+import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.forEach
 import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
@@ -37,12 +41,14 @@ import com.deniscerri.ytdl.core.RuntimeManager
 import com.deniscerri.ytdl.database.DBManager
 import com.deniscerri.ytdl.database.enums.DownloadType
 import com.deniscerri.ytdl.database.repository.DownloadRepository
+import com.deniscerri.ytdl.database.viewmodel.BrowserViewModel
 import com.deniscerri.ytdl.database.viewmodel.CookieViewModel
 import com.deniscerri.ytdl.database.viewmodel.DownloadCardViewModel
 import com.deniscerri.ytdl.database.viewmodel.DownloadViewModel
 import com.deniscerri.ytdl.database.viewmodel.ResultViewModel
 import com.deniscerri.ytdl.database.viewmodel.SettingsViewModel
 import com.deniscerri.ytdl.ui.BaseActivity
+import com.deniscerri.ytdl.ui.browser.BrowserFragment
 import com.deniscerri.ytdl.ui.home.HomeFragment
 import com.deniscerri.ytdl.ui.downloads.DownloadQueueMainFragment
 import com.deniscerri.ytdl.ui.downloads.HistoryFragment
@@ -88,11 +94,19 @@ class MainActivity : BaseActivity() {
     private lateinit var downloadViewModel: DownloadViewModel
     private lateinit var settingsViewModel: SettingsViewModel
     private lateinit var downloadCardViewModel: DownloadCardViewModel
+    private lateinit var browserViewModel: BrowserViewModel
     private var navigationView: NavigationView? = null
     private var navigationBarView: NavigationBarView? = null
     private lateinit var navHostFragment : NavHostFragment
     private lateinit var navController : NavController
     private var loadingRuntimeDialog: androidx.appcompat.app.AlertDialog? = null
+    private var isBottomNavSuppressed: Boolean = false
+    private var fullscreenContainer: FrameLayout? = null
+    private var fullscreenCustomView: View? = null
+    private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
+
+    val isInWebFullscreen: Boolean
+        get() = fullscreenCustomView != null
 
     lateinit var installLauncher: ActivityResultLauncher<Intent>
         private set
@@ -116,6 +130,7 @@ class MainActivity : BaseActivity() {
         downloadViewModel = ViewModelProvider(this)[DownloadViewModel::class.java]
         settingsViewModel = ViewModelProvider(this)[SettingsViewModel::class.java]
         downloadCardViewModel = ViewModelProvider(this)[DownloadCardViewModel::class.java]
+        browserViewModel = ViewModelProvider(this)[BrowserViewModel::class.java]
         preferences = PreferenceManager.getDefaultSharedPreferences(context)
 
         if (preferences.getBoolean("incognito", false)) {
@@ -142,7 +157,15 @@ class MainActivity : BaseActivity() {
                     windowInsets!!, view
                 )
                 val isImeVisible = windowInsetsCompat.isVisible(WindowInsetsCompat.Type.ime())
-                visibility = if (isImeVisible) View.GONE else View.VISIBLE
+                val currDest = navController.currentDestination?.id
+                val allowedByDest = currDest == null || NavbarUtil.getNavBarItems(this@MainActivity).any {
+                    it.isVisible && it.itemId == currDest
+                }
+                visibility = if (!isImeVisible && !isBottomNavSuppressed && !isInWebFullscreen && allowedByDest) {
+                    View.VISIBLE
+                } else {
+                    View.GONE
+                }
                 view.onApplyWindowInsets(windowInsets)
             }
         }
@@ -165,6 +188,11 @@ class MainActivity : BaseActivity() {
                     R.id.homeFragment -> {
                         kotlin.runCatching {
                             (navHostFragment.childFragmentManager.primaryNavigationFragment!! as HomeFragment).scrollToTop()
+                        }
+                    }
+                    R.id.browserFragment -> {
+                        kotlin.runCatching {
+                            (navHostFragment.childFragmentManager.primaryNavigationFragment as? BrowserFragment)?.focusUrlBar()
                         }
                     }
                     R.id.historyFragment -> {
@@ -209,19 +237,26 @@ class MainActivity : BaseActivity() {
             val showingNavbarItems = NavbarUtil.getNavBarItems(this@MainActivity).filter { it.isVisible }.map { it.itemId }
             navController.addOnDestinationChangedListener { _, destination, _ ->
                 Handler(Looper.getMainLooper()).post {
-                    if (showingNavbarItems.contains(destination.id)) {
+                    if (destination.id != R.id.browserFragment) {
+                        if (isInWebFullscreen) {
+                            exitWebFullscreen()
+                        }
+                        isBottomNavSuppressed = false
+                    }
+                    if (showingNavbarItems.contains(destination.id) && !isBottomNavSuppressed && !isInWebFullscreen) {
                         showBottomNavigation()
-                    }else{
-                        hideBottomNavigation()
+                    } else {
+                        hideBottomNavigation(immediate = destination.id == R.id.browserFragment && isBottomNavSuppressed)
                     }
                 }
-
             }
 
             visibilityChanged {
-                if (it.isVisible){
+                if (it.isVisible) {
                     val curr = navController.currentDestination?.id
-                    if (!showingNavbarItems.contains(curr)) hideBottomNavigation()
+                    if (isBottomNavSuppressed || isInWebFullscreen || !showingNavbarItems.contains(curr)) {
+                        hideBottomNavigation(immediate = true)
+                    }
                 }
             }
         }
@@ -229,7 +264,7 @@ class MainActivity : BaseActivity() {
         navigationView?.apply {
             setupWithNavController(navController)
             //terminate button
-            menu.getItem(8).setOnMenuItemClickListener {
+            menu.findItem(R.id.terminate)?.setOnMenuItemClickListener {
                 fun terminateApp() {
                     BgUtilsPoTokenGeneratorUtil.releaseServer(context, 0)
                     finishAndRemoveTask()
@@ -274,7 +309,7 @@ class MainActivity : BaseActivity() {
                 true
             }
             //settings button
-            menu.getItem(9).setOnMenuItemClickListener {
+            menu.findItem(R.id.activitySettings)?.setOnMenuItemClickListener {
                 val intent = Intent(context, SettingsActivity::class.java)
                 startActivity(intent)
                 true
@@ -324,56 +359,176 @@ class MainActivity : BaseActivity() {
     }
 
 
-    fun hideBottomNavigation(){
+    fun hideBottomNavigation(immediate: Boolean = false) {
         navigationBarView?.apply {
-            if (this is BottomNavigationView){
-                this@MainActivity.findViewById<FragmentContainerView>(R.id.frame_layout).updateLayoutParams<ConstraintLayout.LayoutParams> {
-                    bottomToTop = ConstraintLayout.LayoutParams.UNSET
-                    bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-                }
-                this.animate()?.translationY(this.height.toFloat())?.setDuration(300)?.withEndAction {
-                    this.visibility = View.GONE
-                }?.start()
-            }else if (this is NavigationRailView){
-                this@MainActivity.findViewById<FragmentContainerView>(R.id.frame_layout).updateLayoutParams {
-                    this.width = LayoutParams.MATCH_PARENT
-                }
-
-                if (resources.getBoolean(R.bool.is_right_to_left)){
-                    this.animate()?.translationX(this.width.toFloat())?.setDuration(300)?.withEndAction {
-                        this.visibility = View.GONE
+            animate()?.cancel()
+            if (this is BottomNavigationView) {
+                this@MainActivity.findViewById<FragmentContainerView>(R.id.frame_layout)
+                    ?.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                        bottomToTop = ConstraintLayout.LayoutParams.UNSET
+                        bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                    }
+                if (immediate) {
+                    translationY = 0f
+                    visibility = View.GONE
+                } else {
+                    animate()?.translationY(height.toFloat())?.setDuration(300)?.withEndAction {
+                        translationY = 0f
+                        visibility = View.GONE
                     }?.start()
-                }else{
-                    this.animate()?.translationX(-this.width.toFloat())?.setDuration(300)?.withEndAction {
-                        this.visibility = View.GONE
+                }
+            } else if (this is NavigationRailView) {
+                this@MainActivity.findViewById<FragmentContainerView>(R.id.frame_layout)
+                    ?.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                        startToEnd = ConstraintLayout.LayoutParams.UNSET
+                        startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                        width = 0
+                    }
+                val hiddenX = if (resources.getBoolean(R.bool.is_right_to_left)) {
+                    width.toFloat()
+                } else {
+                    -width.toFloat()
+                }
+                if (immediate) {
+                    translationX = 0f
+                    visibility = View.GONE
+                } else {
+                    animate()?.translationX(hiddenX)?.setDuration(300)?.withEndAction {
+                        translationX = 0f
+                        visibility = View.GONE
                     }?.start()
                 }
             }
         }
-
-
     }
 
-    fun showBottomNavigation(){
+    fun showBottomNavigation(immediate: Boolean = false) {
         navigationBarView?.apply {
-            if (this is BottomNavigationView){
-                this@MainActivity.findViewById<FragmentContainerView>(R.id.frame_layout).updateLayoutParams<ConstraintLayout.LayoutParams> {
-                    bottomToTop = R.id.bottomNavigationView
-                    bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+            animate()?.cancel()
+            if (this is BottomNavigationView) {
+                this@MainActivity.findViewById<FragmentContainerView>(R.id.frame_layout)
+                    ?.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                        bottomToTop = R.id.bottomNavigationView
+                        bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+                    }
+                visibility = View.VISIBLE
+                if (immediate) {
+                    translationY = 0f
+                } else {
+                    animate()?.translationY(0f)?.setDuration(300)?.start()
                 }
-                this.animate()?.translationY(0F)?.setDuration(300)?.withEndAction {
-                    this.visibility = View.VISIBLE
-                }?.start()
-            }else if (this is NavigationRailView){
-                this@MainActivity.findViewById<FragmentContainerView>(R.id.frame_layout).updateLayoutParams {
-                    this.width = 0
+            } else if (this is NavigationRailView) {
+                this@MainActivity.findViewById<FragmentContainerView>(R.id.frame_layout)
+                    ?.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                        startToStart = ConstraintLayout.LayoutParams.UNSET
+                        startToEnd = R.id.bottomNavigationView
+                        width = 0
+                    }
+                visibility = View.VISIBLE
+                if (immediate) {
+                    translationX = 0f
+                } else {
+                    animate()?.translationX(0f)?.setDuration(300)?.start()
                 }
-                this.animate()?.translationX(0F)?.setDuration(300)?.withEndAction {
-                    this.visibility = View.VISIBLE
-                }?.start()
             }
         }
+    }
 
+    fun setBrowserBottomNavHidden(hidden: Boolean) {
+        isBottomNavSuppressed = hidden
+        if (!isInWebFullscreen) {
+            if (hidden) {
+                hideBottomNavigation(immediate = true)
+            } else {
+                val currDest = navController.currentDestination?.id
+                val allowedByDest = NavbarUtil.getNavBarItems(this).any {
+                    it.isVisible && it.itemId == currDest
+                }
+                if (allowedByDest) {
+                    showBottomNavigation(immediate = true)
+                }
+            }
+        }
+    }
+
+    fun navigateToMainTab(tabId: Int) {
+        exitWebFullscreen()
+        isBottomNavSuppressed = false
+        showBottomNavigation(immediate = true)
+        val navBar = navigationBarView
+        if (navBar != null && navBar.menu.findItem(tabId) != null) {
+            navBar.selectedItemId = tabId
+        } else {
+            runCatching { navController.navigate(tabId) }
+        }
+    }
+
+    fun enterWebFullscreen(view: View, callback: WebChromeClient.CustomViewCallback) {
+        if (isInWebFullscreen) {
+            runCatching { callback.onCustomViewHidden() }
+            return
+        }
+        val decor = window.decorView as? ViewGroup ?: return
+        val container = FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+            isClickable = true
+            isFocusable = true
+        }
+        (view.parent as? ViewGroup)?.removeView(view)
+        container.addView(
+            view,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+        decor.addView(
+            container,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+        fullscreenContainer = container
+        fullscreenCustomView = view
+        fullscreenCallback = callback
+        hideBottomNavigation(immediate = true)
+        WindowInsetsControllerCompat(window, decor).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    fun exitWebFullscreen() {
+        val container = fullscreenContainer
+        val callback = fullscreenCallback
+        fullscreenContainer = null
+        fullscreenCustomView = null
+        fullscreenCallback = null
+        if (container == null && callback == null) return
+
+        val decor = window.decorView as? ViewGroup
+        if (container != null) {
+            container.removeAllViews()
+            decor?.removeView(container)
+        }
+        if (decor != null) {
+            WindowInsetsControllerCompat(window, decor).show(WindowInsetsCompat.Type.systemBars())
+        }
+        runCatching { callback?.onCustomViewHidden() }
+
+        val currDest = navController.currentDestination?.id
+        val allowedByDest = NavbarUtil.getNavBarItems(this).any {
+            it.isVisible && it.itemId == currDest
+        }
+        if (!isBottomNavSuppressed && allowedByDest) {
+            showBottomNavigation(immediate = true)
+        }
+    }
+
+    override fun onDestroy() {
+        exitWebFullscreen()
+        super.onDestroy()
     }
 
     fun disableBottomNavigation(){
@@ -525,6 +680,20 @@ class MainActivity : BaseActivity() {
         }
     }
 
+
+    fun openBrowserWithUrl(url: String) {
+        if (url.isNotBlank()) {
+            browserViewModel.requestUrl(url)
+        }
+        val navBar = navigationBarView
+        if (navBar != null && navBar.menu.findItem(R.id.browserFragment) != null) {
+            navBar.selectedItemId = R.id.browserFragment
+        } else {
+            runCatching {
+                navController.navigate(R.id.browserFragment)
+            }
+        }
+    }
 
     companion object {
         private const val TAG = "MainActivity"

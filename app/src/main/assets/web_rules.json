@@ -1,0 +1,378 @@
+{
+  "schemaVersion": 1,
+  "rulesVersion": "2026.11.25.2",
+  "quickPlatforms": [
+    { "name": "Instagram", "url": "https://www.instagram.com/", "showOnHome": true },
+    { "name": "Facebook", "url": "https://www.facebook.com/", "showOnHome": true },
+    { "name": "X", "url": "https://x.com/", "showOnHome": true },
+    { "name": "TikTok", "url": "https://www.tiktok.com/", "showOnHome": true },
+    { "name": "YouTube", "url": "https://www.youtube.com/", "showOnHome": true },
+    { "name": "Reddit", "url": "https://www.reddit.com/", "showOnHome": false },
+    { "name": "Pinterest", "url": "https://www.pinterest.com/", "showOnHome": false }
+  ],
+  "domains": {
+    "multiPartPublicSuffixes": [
+      "co.uk", "org.uk", "ac.uk",
+      "com.br", "com.mx", "com.ar", "com.co",
+      "com.au", "net.au", "co.jp", "co.in",
+      "com.tr", "com.tw", "com.hk", "co.kr",
+      "com.es", "com.pe", "com.ve"
+    ],
+    "aliases": {
+      "youtu.be": "youtube.com",
+      "instagr.am": "instagram.com",
+      "fb.watch": "facebook.com",
+      "fb.com": "facebook.com",
+      "fb.me": "facebook.com",
+      "twitter.com": "x.com",
+      "t.co": "x.com",
+      "redd.it": "reddit.com",
+      "pin.it": "pinterest.com",
+      "b23.tv": "bilibili.com",
+      "vk.ru": "vk.com",
+      "snd.sc": "soundcloud.com"
+    },
+    "displayNames": {
+      "instagram.com": "Instagram",
+      "facebook.com": "Facebook",
+      "x.com": "X",
+      "tiktok.com": "TikTok",
+      "youtube.com": "YouTube",
+      "reddit.com": "Reddit",
+      "pinterest.com": "Pinterest",
+      "twitch.tv": "Twitch",
+      "vimeo.com": "Vimeo",
+      "dailymotion.com": "Dailymotion",
+      "bilibili.com": "Bilibili",
+      "soundcloud.com": "SoundCloud",
+      "vk.com": "VK"
+    },
+    "relatedCookieDomains": {
+      "x.com": ["x.com", "twitter.com"],
+      "twitter.com": ["x.com", "twitter.com"],
+      "youtube.com": ["youtube.com", "google.com"],
+      "facebook.com": ["facebook.com", "meta.com"],
+      "instagram.com": ["instagram.com", "meta.com"]
+    },
+    "canonicalUrls": {
+      "x.com": "https://x.com/"
+    },
+    "cdnCookieOrigins": {
+      "fbcdn.net": "https://www.facebook.com/",
+      "fbsbx.com": "https://www.facebook.com/",
+      "cdninstagram.com": "https://www.instagram.com/",
+      "twimg.com": "https://x.com/"
+    },
+    "authCookieExact": [
+      "sessionid",
+      "ds_user_id",
+      "c_user",
+      "xs",
+      "auth_token",
+      "ct0",
+      "twid",
+      "sid",
+      "hsid",
+      "ssid",
+      "apisid",
+      "sapisid",
+      "login_info",
+      "__secure-1psid",
+      "__secure-3psid",
+      "sid_tt",
+      "sessionid_ss",
+      "uid_tt",
+      "reddit_session",
+      "token_v2",
+      "_pinterest_sess",
+      "auth-token",
+      "remixsid",
+      "sessdata",
+      "bili_jct",
+      "oauth_token",
+      "connect.sid",
+      "phpsessid",
+      "jsessionid",
+      "remember_token",
+      "logged_in",
+      "access_token",
+      "refresh_token",
+      "user_session",
+      "session_id",
+      "_session",
+      "auth",
+      "jwt"
+    ],
+    "authCookieSubstrings": [
+      "sessionid",
+      "auth_token",
+      "access_token",
+      "refresh_token",
+      "user_session",
+      "remember_token",
+      "logged_in"
+    ]
+  },
+  "rateLimits": {
+    "strictDomains": [
+      "instagram.com",
+      "facebook.com",
+      "tiktok.com",
+      "x.com",
+      "twitter.com",
+      "threads.net"
+    ],
+    "standardDomains": [
+      "youtube.com",
+      "reddit.com",
+      "twitch.tv",
+      "vimeo.com"
+    ],
+    "strictPolicy": {
+      "minIntervalMs": 2500,
+      "maxIntervalMs": 4500,
+      "ytdlpSleepRequestsSec": "1.5",
+      "maxRetries": "3",
+      "fragmentRetries": "3",
+      "retrySleepHttp": "http:exp=2:20",
+      "retrySleepFragment": "fragment:exp=1:10"
+    },
+    "standardPolicy": {
+      "minIntervalMs": 1000,
+      "maxIntervalMs": 2000,
+      "ytdlpSleepRequestsSec": "1",
+      "maxRetries": "3",
+      "fragmentRetries": "3",
+      "retrySleepHttp": "http:exp=2:15",
+      "retrySleepFragment": "fragment:exp=1:10"
+    },
+    "defaultPolicy": {
+      "minIntervalMs": 500,
+      "maxIntervalMs": 1200,
+      "ytdlpSleepRequestsSec": "",
+      "maxRetries": "3",
+      "fragmentRetries": "3",
+      "retrySleepHttp": "http:exp=1:10",
+      "retrySleepFragment": "fragment:exp=1:8"
+    },
+    "rateLimitErrorMarkers": [
+      "429",
+      "too many requests",
+      "rate-limit",
+      "rate limit",
+      "please wait a few minutes",
+      "try again later"
+    ]
+  },
+  "mediaDetection": {
+    "rejectedImageSubstrings": [
+      "doubleclick",
+      "googlesyndication",
+      "google-analytics",
+      "googletagmanager",
+      "facebook.com/tr",
+      "static.xx.fbcdn.net/rsrc.php",
+      "static.cdninstagram.com/rsrc.php",
+      "/emoji",
+      "/sprites/",
+      "favicon",
+      "apple-touch-icon",
+      "1x1",
+      "blank.gif",
+      "spacer.",
+      "p50x50",
+      "p40x40",
+      "s32x32",
+      "s40x40",
+      "s48x48",
+      "s60x60",
+      "s64x64",
+      "s80x80",
+      "c0.0.40.40",
+      "dst-jpg_p32x32",
+      "dst-jpg_p40x40",
+      "dst-jpg_p50x50",
+      "dst-jpg_p100x100",
+      "dst-jpg_p160x160",
+      "dst-jpg_s40x40",
+      "dst-jpg_s60x60",
+      "dst-jpg_s150x150",
+      "t51.2885-19",
+      "s100x100",
+      "s150x150",
+      "p100x100",
+      "p160x160",
+      "profile_pic"
+    ],
+    "trustedImageCdnMarkers": [
+      "scontent",
+      "fbcdn.net",
+      "cdninstagram.com",
+      "i.redd.it",
+      "preview.redd.it",
+      "i.pinimg.com",
+      "media.tenor.com",
+      "media.giphy.com"
+    ],
+    "htmlPostUrlMarkers": [
+      "/photo", "/p/", "/reel/", "/reels/", "/watch", "/status/",
+      "/posts/", "/videos/", "/video/", "/shorts/", "/clips/",
+      "/story.php", "fbid="
+    ],
+    "videoPostUrlMarkers": [
+      "/reel/", "/reels/", "/watch", "/video/", "/videos/",
+      "/shorts/", "/clips/", "fb.watch/", "youtu.be/", "vm.tiktok.com/",
+      "/share/v/", "/share/r/"
+    ],
+    "photoPageUrlMarkers": [
+      "/photo",
+      "fbid="
+    ],
+    "feedPathMarkers": [
+      "/home", "/feed", "/explore", "/reels",
+      "/following", "/search", "/foryou", "/watch",
+      "/videos", "/shorts", "/clips", "/discover", "/trending"
+    ],
+    "permalinkNoiseMarkers": [
+      "/login", "/signup", "/register", "/sharer", "/share.php",
+      "/help", "/policies", "/privacy", "/terms", "/hashtag/",
+      "/search", "/friends", "/messages", "/notifications",
+      "/settings", "/explore", "/home", "/feed",
+      "l.facebook.com/l.php", "l.instagram.com/",
+      "/reels/audio/", "/audio/", "/music/", "/sound/", "/sounds/",
+      "/accounts/", "/direct/", "/followers", "/following",
+      "/tagged", "/saved", "/places/", "/locations/",
+      "/effects/", "/ar/", "/stories/highlights/"
+    ],
+    "highPriorityPermalinkMarkers": [
+      "/reel/", "/reels/", "/watch", "/videos/", "/video/",
+      "/shorts/", "/clips/", "/photo", "fbid=", "/p/",
+      "/status/", "/share/v/", "/share/r/", "/share/p/"
+    ],
+    "generalPostPermalinkMarkers": [
+      "/posts/", "/permalink", "/story.php", "story_fbid=",
+      "multi_permalinks=", "/comments/", "/t/"
+    ],
+    "videoHintKeywords": [
+      "video", "reel", "clip", "reproductor", "reproducir",
+      "play video", "mute", "unmute", "silenciar", "sonido",
+      "activar audio", "watch"
+    ],
+    "videoIframeHostMarkers": [
+      "youtube.", "youtu.be", "vimeo.", "dailymotion.", "twitch.", "player."
+    ],
+    "uiNoiseSubstrings": [
+      "/rsrc.php", "/emoji", "/sprites/", "favicon", "blank.gif", "1x1",
+      "t51.2885-19", "s150x150", "p100x100", "p160x160", "profile_pic"
+    ],
+    "postContainerSelectors": [
+      "article",
+      "[role=\"article\"]",
+      "[data-testid=\"tweet\"]",
+      "[data-testid=\"post-container\"]",
+      "[data-ft]",
+      "[data-sigil*=\"story\"]",
+      "[data-tracking-duration-id]",
+      "[data-pagelet^=\"FeedUnit\"]"
+    ],
+    "dataAttributeNames": [
+      "data-store",
+      "data-video-url",
+      "data-permalink",
+      "data-url",
+      "data-href",
+      "data-src"
+    ],
+    "dataJsonVideoKeys": [
+      "src",
+      "videoURL",
+      "playable_url",
+      "playable_url_quality_hd",
+      "sd_src",
+      "hd_src",
+      "video_url"
+    ],
+    "dataJsonPermalinkKeys": [
+      "permalink_url",
+      "permalink",
+      "share_url",
+      "url"
+    ],
+    "genericPlaceholderTitles": [
+      "video player",
+      "reproductor de video",
+      "reproductor de vídeo",
+      "reproductor",
+      "audio player",
+      "media player",
+      "player",
+      "instagram video player",
+      "facebook video player",
+      "video",
+      "reel",
+      "reels",
+      "watch",
+      "play",
+      "play video",
+      "pause",
+      "reproducir",
+      "reproducir video",
+      "reproducir vídeo",
+      "mute",
+      "unmute",
+      "silenciar",
+      "activar audio",
+      "activar sonido",
+      "sonido",
+      "audio",
+      "volume",
+      "volumen",
+      "close",
+      "cerrar",
+      "share",
+      "compartir",
+      "like",
+      "me gusta",
+      "comment",
+      "comentar",
+      "follow",
+      "seguir",
+      "more",
+      "more options",
+      "más opciones",
+      "media",
+      "no photo description available",
+      "no photo description available.",
+      "no hay ninguna descripción de la foto disponible",
+      "no hay ninguna descripción de la foto disponible."
+    ]
+  },
+  "fallbackScraper": {
+    "adOrTelemetryHostMarkers": [
+      "doubleclick.net",
+      "googlesyndication.com",
+      "google-analytics.com",
+      "googletagmanager.com",
+      "adservice.",
+      "analytics.",
+      "pixel.",
+      "sentry.io"
+    ],
+    "lowPriorityVideoMarkers": [
+      "preview", "poster", "thumb", "muted", "micro", "trailer"
+    ],
+    "htmlJsonVideoKeys": [
+      { "key": "playable_url_quality_hd", "minHeight": 720 },
+      { "key": "browser_native_hd_url", "minHeight": 720 },
+      { "key": "hd_src", "minHeight": 720 },
+      { "key": "playable_url", "minHeight": 0 },
+      { "key": "browser_native_sd_url", "minHeight": 360 },
+      { "key": "sd_src", "minHeight": 360 },
+      { "key": "video_url", "minHeight": 0 },
+      { "key": "contentUrl", "minHeight": 0 },
+      { "key": "hls_manifest_url", "minHeight": 0 },
+      { "key": "playbackUrl", "minHeight": 0 },
+      { "key": "dash_manifest", "minHeight": 0 }
+    ]
+  }
+}

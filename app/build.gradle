@@ -45,13 +45,13 @@ android {
         }
     }catch(IOException ignored){}
     defaultConfig {
-        applicationId "com.deniscerri.ytdl"
+        applicationId "com.ytdlp.fork"
         minSdk 24
         targetSdk 36
         versionCode versionMajor * 1000000 + versionMinor * 10000 + versionPatch * 100 + versionBuild
         versionName "${versionMajor}.${versionMinor}.${versionPatch}${versionExt}"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        archivesBaseName = "YTDLnis-$versionName"
+        archivesBaseName = "YTDLFork-$versionName"
         vectorDrawables {
             useSupportLibrary true
         }
@@ -111,9 +111,9 @@ android {
 
             def abi = output.getFilter(com.android.build.OutputFile.ABI) ?: "universal"
             if (variant.flavorName == "github") {
-                output.outputFileName = "YTDLnis-${versionName}-${abi}-${variant.buildType.name}-${variant.flavorName}.apk"
+                output.outputFileName = "YTDLFork-${versionName}-${abi}-${variant.buildType.name}-${variant.flavorName}.apk"
             } else {
-                output.outputFileName = "YTDLnis-${versionName}-${variant.flavorName}-${abi}-${variant.buildType.name}.apk"
+                output.outputFileName = "YTDLFork-${versionName}-${variant.flavorName}-${abi}-${variant.buildType.name}.apk"
             }
         }
     }

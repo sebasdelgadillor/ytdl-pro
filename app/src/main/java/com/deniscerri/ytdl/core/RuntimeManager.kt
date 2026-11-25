@@ -33,6 +33,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.apache.commons.io.FileUtils
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.security.MessageDigest
@@ -41,6 +42,8 @@ import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.collections.set
 import kotlin.concurrent.Volatile
 
@@ -419,6 +422,7 @@ object RuntimeManager {
     }
 
     class CanceledException : Exception()
+    class StalledProcessException(message: String) : ExecuteException(message)
 
     private fun buildYTDLCommand(
         request: YTDLRequest,
@@ -462,10 +466,19 @@ object RuntimeManager {
         processId: String? = null,
         redirectErrorStream: Boolean = false,
         usingCacheDir: Boolean = false,
+        stallTimeoutMs: Long = if (usingCacheDir) 60_000L else 35_000L,
+        maxDurationMs: Long = if (usingCacheDir) 0L else 95_000L,
         callback: ((Float, Long, String) -> Unit)? = null
     ) : ExecuteResponse {
         val fullCommand = buildYTDLCommand(request, usingCacheDir)
-        return executeImpl(fullCommand, processId, redirectErrorStream, callback = callback)
+        return executeImpl(
+            fullCommand = fullCommand,
+            processId = processId,
+            redirectErrorStream = redirectErrorStream,
+            stallTimeoutMs = stallTimeoutMs,
+            maxDurationMs = maxDurationMs,
+            callback = callback
+        )
     }
 
     fun executePython(
@@ -537,12 +550,39 @@ object RuntimeManager {
         return executeImpl(fullCommand, processId, true, executeDirectory = executeDirectory, callback = callback)
     }
 
+    fun executeFFmpeg(
+        args: List<String>,
+        processId: String? = null,
+        executeDirectory: File? = null,
+        stallTimeoutMs: Long = 60_000L,
+        maxDurationMs: Long = 0L,
+        callback: ((Float, Long, String) -> Unit)? = null
+    ): ExecuteResponse {
+        assertInit()
+        if (!ffmpegLocation.isAvailable) {
+            throw ExecuteException("FFmpeg binary is not available")
+        }
+        val fullCommand = mutableListOf(ffmpegLocation.executable.absolutePath)
+        fullCommand.addAll(args)
+        return executeImpl(
+            fullCommand = fullCommand,
+            processId = processId,
+            redirectErrorStream = true,
+            executeDirectory = executeDirectory,
+            stallTimeoutMs = stallTimeoutMs,
+            maxDurationMs = maxDurationMs,
+            callback = callback
+        )
+    }
+
     fun executeImpl(
         fullCommand: List<String>,
         processId: String? = null,
         redirectErrorStream: Boolean = false,
         executeDirectory: File? = null,
         extraEnv: Map<String, String> = emptyMap(),
+        stallTimeoutMs: Long = 0L,
+        maxDurationMs: Long = 0L,
         callback: ((Float, Long, String) -> Unit)? = null
     ) : ExecuteResponse {
 
@@ -551,6 +591,8 @@ object RuntimeManager {
         }
 
         val startTime = System.currentTimeMillis()
+        val lastActivityMs = AtomicLong(startTime)
+        val stalledFlag = AtomicBoolean(false)
         val processBuilder = ProcessBuilder(fullCommand).redirectErrorStream(redirectErrorStream)
 
         processBuilder.environment().putAll(getEnvironment())
@@ -570,8 +612,22 @@ object RuntimeManager {
         }
         registerProcess(processId, process)
 
+        val watchdog = startProcessWatchdog(
+            process = process,
+            processId = processId,
+            startTimeMs = startTime,
+            lastActivityMs = lastActivityMs,
+            stallTimeoutMs = stallTimeoutMs,
+            maxDurationMs = maxDurationMs,
+            stalledFlag = stalledFlag
+        )
+
         return try {
-            val stdOutProcessor = StreamProcessExtractor(outBuffer, process.inputStream, callback)
+            val activityCallback: (Float, Long, String) -> Unit = { p, eta, line ->
+                lastActivityMs.set(System.currentTimeMillis())
+                callback?.invoke(p, eta, line)
+            }
+            val stdOutProcessor = StreamProcessExtractor(outBuffer, process.inputStream, activityCallback)
             val stdErrProcessor = StreamGobbler(errBuffer, process.errorStream)
 
             stdOutProcessor.join()
@@ -586,9 +642,12 @@ object RuntimeManager {
             )
 
             if (!successCodes.contains(exitCode)) {
+                if (stalledFlag.get()) {
+                    throw StalledProcessException("Process stalled and was terminated to save battery")
+                }
                 // Check if process was manually killed (removed from map)
                 if (processId != null && !idProcessMap.containsKey(processId)) throw CanceledException()
-                throw ExecuteException(err)
+                throw ExecuteException(err.ifBlank { out.takeLast(2000) })
             }
 
             ExecuteResponse(fullCommand, exitCode, System.currentTimeMillis() - startTime, out, err)
@@ -596,7 +655,53 @@ object RuntimeManager {
             process.destroy()
             throw e
         } finally {
+            watchdog?.interrupt()
             if (processId != null) idProcessMap.remove(processId)
+        }
+    }
+
+    private fun startProcessWatchdog(
+        process: Process,
+        processId: String?,
+        startTimeMs: Long,
+        lastActivityMs: AtomicLong,
+        stallTimeoutMs: Long,
+        maxDurationMs: Long,
+        stalledFlag: AtomicBoolean
+    ): Thread? {
+        if (stallTimeoutMs <= 0L && maxDurationMs <= 0L) return null
+        return Thread {
+            try {
+                while (isProcessAlive(process)) {
+                    Thread.sleep(2_000L)
+                    if (!isProcessAlive(process)) break
+                    val now = System.currentTimeMillis()
+                    val stalled = stallTimeoutMs > 0L && (now - lastActivityMs.get()) >= stallTimeoutMs
+                    val timedOut = maxDurationMs > 0L && (now - startTimeMs) >= maxDurationMs
+                    if (stalled || timedOut) {
+                        stalledFlag.set(true)
+                        if (processId != null) idProcessMap.remove(processId)
+                        destroyProcessTree(process)
+                        break
+                    }
+                }
+            } catch (_: InterruptedException) {
+                // Watchdog stopped on normal completion
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun isProcessAlive(process: Process): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            process.isAlive
+        } else {
+            runCatching {
+                process.exitValue()
+                false
+            }.getOrDefault(true)
         }
     }
 
@@ -628,33 +733,73 @@ object RuntimeManager {
         request: YTDLRequest,
         processId: String? = null,
         usingCacheDir: Boolean = false,
+        stallTimeoutMs: Long = 35_000L,
+        maxDurationMs: Long = 95_000L,
         outputHandler: (InputStream) -> T
     ): T {
         val fullCommand = buildYTDLCommand(request, usingCacheDir)
-        return executeStreamingImpl(fullCommand, processId, outputHandler = outputHandler)
+        return executeStreamingImpl(
+            fullCommand = fullCommand,
+            processId = processId,
+            stallTimeoutMs = stallTimeoutMs,
+            maxDurationMs = maxDurationMs,
+            outputHandler = outputHandler
+        )
     }
 
     fun <T> executeStreamingImpl(
         fullCommand: List<String>,
         processId: String? = null,
         executeDirectory: File? = null,
+        stallTimeoutMs: Long = 35_000L,
+        maxDurationMs: Long = 95_000L,
         outputHandler: (InputStream) -> T
     ): T {
+        val startTime = System.currentTimeMillis()
+        val lastActivityMs = AtomicLong(startTime)
+        val stalledFlag = AtomicBoolean(false)
         val process = startProcess(fullCommand, processId, executeDirectory = executeDirectory)
         val errBuffer = StringBuffer()
+
+        val watchdog = startProcessWatchdog(
+            process = process,
+            processId = processId,
+            startTimeMs = startTime,
+            lastActivityMs = lastActivityMs,
+            stallTimeoutMs = stallTimeoutMs,
+            maxDurationMs = maxDurationMs,
+            stalledFlag = stalledFlag
+        )
 
         return try {
             val stdErrProcessor = StreamGobbler(errBuffer, process.errorStream)
 
+            val trackedStream = object : FilterInputStream(process.inputStream) {
+                override fun read(): Int {
+                    val b = super.read()
+                    if (b != -1) lastActivityMs.set(System.currentTimeMillis())
+                    return b
+                }
+
+                override fun read(b: ByteArray, off: Int, len: Int): Int {
+                    val count = super.read(b, off, len)
+                    if (count > 0) lastActivityMs.set(System.currentTimeMillis())
+                    return count
+                }
+            }
+
             // Consume + fully drain stdout via the caller's handler BEFORE waitFor(),
             // to avoid deadlocking on a full stdout pipe while the process still runs.
-            val result = process.inputStream.use { outputHandler(it) }
+            val result = trackedStream.use { outputHandler(it) }
 
             stdErrProcessor.join()
             val exitCode = process.waitFor()
             val err = errBuffer.toString()
 
             if (exitCode != 0) {
+                if (stalledFlag.get()) {
+                    throw StalledProcessException("Streaming process stalled and was terminated")
+                }
                 if (processId != null && !idProcessMap.containsKey(processId)) throw CanceledException()
                 throw ExecuteException(err)
             }
@@ -664,6 +809,7 @@ object RuntimeManager {
             process.destroy()
             throw e
         } finally {
+            watchdog?.interrupt()
             if (processId != null) idProcessMap.remove(processId)
         }
     }

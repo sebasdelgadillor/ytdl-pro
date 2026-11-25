@@ -30,6 +30,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
+import com.deniscerri.ytdl.MainActivity
 import com.deniscerri.ytdl.R
 import com.deniscerri.ytdl.database.enums.DownloadType
 import com.deniscerri.ytdl.database.models.DownloadItem
@@ -44,6 +45,8 @@ import com.deniscerri.ytdl.database.viewmodel.ResultViewModel
 import com.deniscerri.ytdl.receiver.ShareActivity
 import com.deniscerri.ytdl.ui.BaseActivity
 import com.deniscerri.ytdl.ui.more.cookies.WebViewActivity
+import com.deniscerri.ytdl.util.AccessibilityUtil
+import com.deniscerri.ytdl.util.BrowserMediaUtil
 import com.deniscerri.ytdl.util.UiUtil
 import com.facebook.shimmer.ShimmerFrameLayout
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -92,6 +95,11 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
     private var disableUpdateData : Boolean = false
     private var currentDownloadItem: DownloadItem? = null
     private var incognito: Boolean = false
+    private var hasTriggeredLazyFormats: Boolean = false
+    private var forceUpdateData: Boolean = false
+    private var includeCommandTab: Boolean = false
+    private var allowDynamicTypeSwitch: Boolean = true
+    private var isImageOnly: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,7 +116,9 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
 
         type = arguments?.getSerializable("type") as DownloadType
         disableUpdateData = arguments?.getBoolean("disableUpdateData") == true
+        forceUpdateData = arguments?.getBoolean("force_update_data") == true
         ignoreDuplicates = arguments?.getBoolean("ignore_duplicates") == true
+        allowDynamicTypeSwitch = arguments?.getBoolean("allow_dynamic_type_switch", true) ?: true
 
         if (res == null){
             dismiss()
@@ -177,25 +187,21 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
             overScrollMode = View.OVER_SCROLL_NEVER
         }
 
-        var commandTemplateNr = 0
-        lifecycleScope.launch{
-            withContext(Dispatchers.IO){
-                commandTemplateNr = commandTemplateViewModel.getTotalNumber()
-                if (!Patterns.WEB_URL.matcher(result.url).matches()) commandTemplateNr++
-                if(commandTemplateNr <= 0){
-                    (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(2)?.isClickable = true
-                    (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(2)?.alpha = 0.3f
-                }
-            }
+        val isCommandOnly = (type == DownloadType.command && !Patterns.WEB_URL.matcher(result.url).matches())
+        includeCommandTab = isCommandOnly || type == DownloadType.command
+        if (includeCommandTab) {
+            tabLayout.addTab(tabLayout.newTab().setText(R.string.command))
         }
 
-        //check if the item has formats and its audio-only
-        val formats = result.formats
-        var isAudioOnly = formats.isNotEmpty() && formats.none { !it.format_note.contains("audio") }
+        //check if the item has formats and its audio-only or image-only
+        isImageOnly = BrowserMediaUtil.isImageOnlyResult(result)
+        var isAudioOnly = BrowserMediaUtil.isAudioOnlyResult(result)
         if (isAudioOnly){
-            (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(1)?.isClickable = true
-            (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(1)?.alpha = 0.3f
+            (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(0)?.isClickable = true
+            (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(0)?.alpha = 0.3f
         }
+
+        (title as? TextView)?.text = result.title.ifBlank { getString(R.string.download) }
 
         //remove outdated player url of 1hr so it can refetch it in the cut player
         if (result.creationTime > System.currentTimeMillis() - 3600000) result.urls = ""
@@ -206,44 +212,52 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
             result,
             currentDownloadItem,
             nonSpecific = result.url.endsWith(".txt"),
-            isIncognito = incognito
+            isIncognito = incognito,
+            useModernMediaTabs = true,
+            includeCommandTab = includeCommandTab
         )
 
         viewPager2.adapter = fragmentAdapter
         viewPager2.isSaveFromParentEnabled = false
 
         view.post {
-            when(type) {
-                DownloadType.audio -> {
-                    tabLayout.getTabAt(0)!!.select()
-                    viewPager2.setCurrentItem(0, false)
+            when {
+                type == DownloadType.command -> {
+                    val cmdIdx = if (includeCommandTab) 3 else 0
+                    tabLayout.getTabAt(cmdIdx)!!.select()
+                    viewPager2.postDelayed({
+                        viewPager2.setCurrentItem(cmdIdx, false)
+                    }, 200)
                 }
-                DownloadType.video -> {
-                    if (isAudioOnly){
-                        tabLayout.getTabAt(0)!!.select()
-                        viewPager2.setCurrentItem(0, false)
-                        Toast.makeText(context, getString(R.string.audio_only_item), Toast.LENGTH_SHORT).show()
-                    }else{
-                        tabLayout.getTabAt(1)!!.select()
-                        viewPager2.setCurrentItem(1, false)
-                    }
+                isImageOnly || type == DownloadType.image -> {
+                    tabLayout.getTabAt(2)!!.select()
+                    viewPager2.setCurrentItem(2, false)
+                }
+                type == DownloadType.audio -> {
+                    tabLayout.getTabAt(1)!!.select()
+                    viewPager2.setCurrentItem(1, false)
+                }
+                isAudioOnly -> {
+                    tabLayout.getTabAt(1)!!.select()
+                    viewPager2.setCurrentItem(1, false)
+                    Toast.makeText(context, getString(R.string.audio_only_item), Toast.LENGTH_SHORT).show()
                 }
                 else -> {
-                    tabLayout.getTabAt(2)!!.select()
-                    viewPager2.postDelayed( {
-                        viewPager2.setCurrentItem(2, false)
-                    }, 200)
+                    tabLayout.getTabAt(0)!!.select()
+                    viewPager2.setCurrentItem(0, false)
                 }
             }
 
             //check if the item is coming from a text file
-            val isCommandOnly = (type == DownloadType.command && !Patterns.WEB_URL.matcher(result.url).matches())
             if (isCommandOnly){
                 (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(0)?.isClickable = false
                 (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(0)?.alpha = 0.3f
 
                 (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(1)?.isClickable = false
                 (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(1)?.alpha = 0.3f
+
+                (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(2)?.isClickable = false
+                (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(2)?.alpha = 0.3f
 
                 (updateItem.parent as LinearLayout).visibility = View.GONE
             }
@@ -257,32 +271,11 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
 
         tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab?) {
-                if (tab!!.position == 2 && commandTemplateNr == 0){
+                if (tab == null) return
+                if (tab.position == 0 && isAudioOnly){
                     tabLayout.selectTab(tabLayout.getTabAt(1))
-                    val s = Snackbar.make(view, getString(R.string.add_template_first), Snackbar.LENGTH_LONG)
-                    val snackbarView: View = s.view
-                    val snackTextView = snackbarView.findViewById<View>(com.google.android.material.R.id.snackbar_text) as TextView
-                    snackTextView.maxLines = 9999999
-                    s.setAction(R.string.new_template){
-                        UiUtil.showCommandTemplateCreationOrUpdatingSheet(
-                            item = null, context = requireActivity(), lifeCycle = this@DownloadBottomSheetDialog, commandTemplateViewModel = commandTemplateViewModel,
-                            newTemplate = {
-                                commandTemplateNr = 1
-                                (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(2)?.isClickable = true
-                                (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(2)?.alpha = 1f
-                                tabLayout.selectTab(tabLayout.getTabAt(2))
-                            },
-                            dismissed = {
-
-                            }
-                        )
-                    }
-                    s.show()
-                }else if (tab.position == 1 && isAudioOnly){
-                    tabLayout.selectTab(tabLayout.getTabAt(0))
                     Toast.makeText(context, getString(R.string.audio_only_item), Toast.LENGTH_SHORT).show()
-                }
-                else{
+                } else {
                     viewPager2.setCurrentItem(tab.position, false)
                 }
             }
@@ -298,11 +291,40 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
             override fun onPageSelected(position: Int) {
                 tabLayout.selectTab(tabLayout.getTabAt(position))
                 runCatching {
+                    val selectedTabType = tabTypeForPosition(position)
                     sharedPreferences.edit(commit = true) {
-                        putString("last_used_download_type",
-                            listOf(DownloadType.audio, DownloadType.video, DownloadType.command)[position].toString())
+                        putString(
+                            "last_used_download_type",
+                            selectedTabType.toString()
+                        )
                     }
                     fragmentAdapter.updateWhenSwitching(viewPager2.currentItem)
+
+                    if ((selectedTabType == DownloadType.video || selectedTabType == DownloadType.audio) &&
+                        !disableUpdateData &&
+                        !isImageOnly &&
+                        !hasTriggeredLazyFormats &&
+                        result.url.startsWith("http") &&
+                        !BrowserMediaUtil.isDirectStaticImageFile(result.url)
+                    ) {
+                        if ((forceUpdateData || result.title.isEmpty()) &&
+                            currentDownloadItem == null &&
+                            !sharedPreferences.getBoolean("quick_download", false)
+                        ) {
+                            hasTriggeredLazyFormats = true
+                            initUpdateData()
+                        } else {
+                            val needsFormats = result.formats.isEmpty() ||
+                                result.formats.any {
+                                    it.format_note.contains("ytdlnisgeneric") ||
+                                        it.format_id.startsWith("fb_")
+                                }
+                            if (needsFormats && !sharedPreferences.getBoolean("quick_download", false)) {
+                                hasTriggeredLazyFormats = true
+                                initUpdateFormats(result)
+                            }
+                        }
+                    }
                 }
             }
         })
@@ -388,19 +410,29 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
                         itemsToQueue.add(it)
 
                         lifecycleScope.launch {
-                            val result = withContext(Dispatchers.IO) {
+                            val queueRes = withContext(Dispatchers.IO) {
                                 downloadViewModel.queueDownloads(itemsToQueue, ignoreDuplicates)
                             }
+                            if (queueRes.message.isNotBlank()) {
+                                Toast.makeText(requireContext(), queueRes.message, Toast.LENGTH_LONG).show()
+                            } else if (queueRes.duplicateDownloadIDs.isEmpty() && activity !is ShareActivity) {
+                                Toast.makeText(requireContext(), R.string.download_started_toast, Toast.LENGTH_SHORT).show()
+                            }
                             withContext(Dispatchers.Main){
-                                handleDuplicatesAndDismiss(result.duplicateDownloadIDs)
+                                handleDuplicatesAndDismiss(queueRes.duplicateDownloadIDs)
                             }
                         }
                     })
                 }else{
-                    val result = withContext(Dispatchers.IO) {
+                    val queueRes = withContext(Dispatchers.IO) {
                         downloadViewModel.queueDownloads(listOf(item), ignoreDuplicates)
                     }
-                    handleDuplicatesAndDismiss(result.duplicateDownloadIDs)
+                    if (queueRes.message.isNotBlank()) {
+                        Toast.makeText(requireContext(), queueRes.message, Toast.LENGTH_LONG).show()
+                    } else if (queueRes.duplicateDownloadIDs.isEmpty() && activity !is ShareActivity) {
+                        Toast.makeText(requireContext(), R.string.download_started_toast, Toast.LENGTH_SHORT).show()
+                    }
+                    handleDuplicatesAndDismiss(queueRes.duplicateDownloadIDs)
                 }
             }
         }
@@ -454,6 +486,10 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
 
         val incognitoBtn = view.findViewById<Button>(R.id.bottomsheet_incognito)
         incognitoBtn.alpha = if (incognito) 1f else 0.3f
+        AccessibilityUtil.setStateDescription(
+            incognitoBtn,
+            getString(if (incognito) R.string.state_enabled else R.string.state_disabled)
+        )
         incognitoBtn.setOnClickListener {
             if (incognito) {
                 it.alpha = 0.3f
@@ -463,18 +499,33 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
 
             incognito = !incognito
             fragmentAdapter.isIncognito = incognito
+            AccessibilityUtil.setStateDescription(
+                incognitoBtn,
+                getString(if (incognito) R.string.state_enabled else R.string.state_disabled)
+            )
             val onOff = if (incognito) getString(R.string.ok) else getString(R.string.disabled)
             Snackbar.make(incognitoBtn, "${getString(R.string.incognito)}: $onOff", Snackbar.LENGTH_SHORT).show()
         }
 
 
         //update in the background if there is no data
-        if (!disableUpdateData) {
-            if(result.title.isEmpty() && currentDownloadItem == null && !sharedPreferences.getBoolean("quick_download", false) && type != DownloadType.command){
+        val hasDirectImagePreloaded = type == DownloadType.image && (
+            result.thumb.startsWith("http") ||
+                result.thumb.startsWith("data:image/", ignoreCase = true) ||
+                com.deniscerri.ytdl.util.BrowserMediaUtil.isDirectStaticImageFile(result.url)
+            )
+        if (!disableUpdateData && !hasDirectImagePreloaded) {
+            if((forceUpdateData || result.title.isEmpty()) && currentDownloadItem == null && !sharedPreferences.getBoolean("quick_download", false) && type != DownloadType.command){
+                hasTriggeredLazyFormats = true
                 initUpdateData()
             }else {
-                val usingGenericFormatsOrEmpty = result.formats.isEmpty() || result.formats.any { it.format_note.contains("ytdlnisgeneric") }
-                if (usingGenericFormatsOrEmpty && sharedPreferences.getBoolean("update_formats", false) && !sharedPreferences.getBoolean("quick_download", false)){
+                val usingGenericFormatsOrEmpty = !isImageOnly && (
+                    result.formats.isEmpty() || result.formats.any {
+                        it.format_note.contains("ytdlnisgeneric") || it.format_id.startsWith("fb_")
+                    }
+                )
+                if (usingGenericFormatsOrEmpty && !sharedPreferences.getBoolean("quick_download", false) && type != DownloadType.command){
+                    hasTriggeredLazyFormats = true
                     initUpdateFormats(result)
                 }
             }
@@ -483,23 +534,63 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
         lifecycleScope.launch {
             resultViewModel.uiState.collectLatest { res ->
                 if (res.errorMessage != null){
+                    val msg = res.errorMessage!!
                     kotlin.runCatching {
-                        UiUtil.handleNoResults(requireActivity(), res.errorMessage!!,
-                            url = result.url,
-                            continueAnyway =  true,
-                            continued = {},
-                            cookieFetch = {
-                                val myIntent = Intent(requireContext(), WebViewActivity::class.java)
-                                myIntent.putExtra("url", "https://${URL(result.url).host}")
-                                cookiesFetchedResultLauncher.launch(myIntent)
-                            },
-                            closed = {
-                                dismiss()
+                        shimmerLoading.stopShimmer()
+                        shimmerLoadingSubtitle.stopShimmer()
+                        shimmerLoading.visibility = View.GONE
+                        shimmerLoadingSubtitle.visibility = View.GONE
+                        title.visibility = View.VISIBLE
+                        subtitle.visibility = View.VISIBLE
+                        downloadBtn.isEnabled = true
+                        scheduleBtn.isEnabled = true
+
+                        if (result.url.startsWith("http")) {
+                            (updateItem.parent as LinearLayout).visibility = View.VISIBLE
+                            updateItem.setOnClickListener {
+                                (updateItem.parent as LinearLayout).visibility = View.GONE
+                                initUpdateData()
                             }
-                        )
+                        }
+
+                        (tabLayout.getChildAt(0) as? ViewGroup)?.let { strip ->
+                            for (i in 0 until minOf(3, strip.childCount)) {
+                                strip.getChildAt(i)?.apply {
+                                    isClickable = true
+                                    alpha = 1f
+                                }
+                            }
+                        }
+
+                        if (allowDynamicTypeSwitch &&
+                            (BrowserMediaUtil.isLikelyPhotoPageUrl(result.url) || BrowserMediaUtil.isDirectStaticImageFile(result.url))
+                        ) {
+                            tabLayout.getTabAt(2)?.select()
+                            viewPager2.setCurrentItem(2, false)
+                        }
+
+                        val cookieRelated = msg.contains("cookie", ignoreCase = true) ||
+                            msg.contains("sign in", ignoreCase = true) ||
+                            msg.contains("login", ignoreCase = true)
+                        val sb = Snackbar.make(view, getString(R.string.media_type_uncertain_choose_format), Snackbar.LENGTH_LONG)
+                        if (cookieRelated && result.url.startsWith("http")) {
+                            sb.setAction(R.string.get_cookies) {
+                                val targetUrl = "https://${URL(result.url).host}"
+                                val mainAct = activity as? MainActivity
+                                if (mainAct != null) {
+                                    dismiss()
+                                    mainAct.openBrowserWithUrl(targetUrl)
+                                } else {
+                                    val myIntent = Intent(requireContext(), WebViewActivity::class.java)
+                                    myIntent.putExtra("url", targetUrl)
+                                    cookiesFetchedResultLauncher.launch(myIntent)
+                                }
+                            }
+                        }
+                        sb.show()
                     }
 
-                    resultViewModel.uiState.update {it.copy(errorMessage  = null) }
+                    resultViewModel.uiState.update { it.copy(errorMessage = null) }
                 }
             }
         }
@@ -537,8 +628,48 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
                 kotlin.runCatching {
                     lifecycleScope.launch(Dispatchers.Main) {
                         if (result.size == 1 && result[0] != null) {
-                            val res = result[0]!!
+                            val previousThumb = this@DownloadBottomSheetDialog.result.thumb
+                            val rawRes = result[0]!!
+                            val res = if (rawRes.thumb.isBlank() && previousThumb.isNotBlank()) {
+                                rawRes.copy(thumb = previousThumb)
+                            } else {
+                                rawRes
+                            }
+                            this@DownloadBottomSheetDialog.result = res
+                            (title as? TextView)?.text = res.title.ifBlank { getString(R.string.download) }
                             fragmentAdapter.setResultItem(res)
+
+                            isImageOnly = BrowserMediaUtil.isImageOnlyResult(res)
+                            if (isImageOnly) {
+                                isAudioOnly = false
+                                (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(0)?.apply {
+                                    isClickable = true
+                                    alpha = 1f
+                                }
+                                if (allowDynamicTypeSwitch && type != DownloadType.command) {
+                                    tabLayout.getTabAt(2)?.select()
+                                    viewPager2.setCurrentItem(2, false)
+                                }
+                            } else {
+                                isAudioOnly = BrowserMediaUtil.isAudioOnlyResult(res)
+                                if (res.formats.isNotEmpty()) {
+                                    (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(0)?.apply {
+                                        isClickable = true
+                                        alpha = if (isAudioOnly) 0.3f else 1f
+                                    }
+                                    if (allowDynamicTypeSwitch && type != DownloadType.command) {
+                                        if (isAudioOnly) {
+                                            tabLayout.getTabAt(1)?.select()
+                                            viewPager2.setCurrentItem(1, false)
+                                        } else if (tabLayout.selectedTabPosition == 2 &&
+                                            !BrowserMediaUtil.isDirectStaticImageFile(res.url)
+                                        ) {
+                                            tabLayout.getTabAt(0)?.select()
+                                            viewPager2.setCurrentItem(0, false)
+                                        }
+                                    }
+                                }
+                            }
 
                             title.visibility = View.VISIBLE
                             subtitle.visibility = View.VISIBLE
@@ -547,18 +678,28 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
                             shimmerLoading.stopShimmer()
                             shimmerLoadingSubtitle.stopShimmer()
 
-                            val usingGenericFormatsOrEmpty = res.formats.isEmpty() || res.formats.any { it.format_note.contains("ytdlnisgeneric") }
+                            val usingGenericFormatsOrEmpty = !isImageOnly && (
+                                res.formats.isEmpty() || res.formats.any { it.format_note.contains("ytdlnisgeneric") }
+                                )
                             downloadCardViewModel.setResultItem(res)
-                            if (usingGenericFormatsOrEmpty && sharedPreferences.getBoolean("update_formats", false)){
+                            if (usingGenericFormatsOrEmpty && !sharedPreferences.getBoolean("quick_download", false)){
                                 initUpdateFormats(res)
                             }
 
                         }else if (result.size > 1) {
                             //open multi download card instead
+                            val ids = result.mapNotNull { it?.id }.filter { it > 0L }
                             if (activity is ShareActivity){
                                 findNavController().navigate(R.id.action_downloadBottomSheetDialog_to_selectPlaylistItemsDialog, bundleOf(
-                                    Pair("resultIDs", result.map { it!!.id }.toLongArray()),
+                                    Pair("resultIDs", ids.toLongArray()),
                                 ))
+                            }else if (ids.isNotEmpty()){
+                                val navController = runCatching { findNavController() }.getOrNull()
+                                downloadViewModel.turnResultItemsToProcessingDownloads(ids, downloadNow = false).join()
+                                dismiss()
+                                runCatching {
+                                    navController?.navigate(R.id.downloadMultipleBottomSheetDialog2)
+                                }
                             }else{
                                 dismiss()
                             }
@@ -597,19 +738,19 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
                             val formats = event.formats
                             isAudioOnly = formats.isNotEmpty() && formats.none { !it.format_note.contains("audio") }
                             if (isAudioOnly){
-                                (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(1)?.isClickable = true
-                                (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(1)?.alpha = 0.3f
+                                (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(0)?.isClickable = true
+                                (tabLayout.getChildAt(0) as? ViewGroup)?.getChildAt(0)?.alpha = 0.3f
                                 Toast.makeText(context, getString(R.string.audio_only_item), Toast.LENGTH_SHORT).show()
-                                tabLayout.getTabAt(0)!!.select()
-                                viewPager2.setCurrentItem(0, false)
+                                tabLayout.getTabAt(1)!!.select()
+                                viewPager2.setCurrentItem(1, false)
                             }
                             if (formats.isNotEmpty()){
                                 result.formats = formats
                             }
                         }
                         is FormatViewModel.FormatUpdateEvent.Error -> {
-                            // an open format sheet reports it itself
-                            if (parentFragmentManager.findFragmentByTag("formatSheet") != null) return@runCatching
+                            // an open format sheet reports it itself; skip errors on image-only items
+                            if (isImageOnly || parentFragmentManager.findFragmentByTag("formatSheet") != null) return@runCatching
                             resultViewModel.uiState.update { it.copy(processing = false, errorMessage = event.message) }
                         }
                         else -> {}
@@ -629,17 +770,34 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
         }
     }
 
+    private fun tabTypeForPosition(position: Int): DownloadType {
+        val tabTypes = listOfNotNull(
+            DownloadType.video,
+            DownloadType.audio,
+            DownloadType.image,
+            if (includeCommandTab) DownloadType.command else null
+        )
+        return tabTypes.getOrElse(position) { type }
+    }
+
     private fun getDownloadItem(selectedTabPosition: Int = tabLayout.selectedTabPosition) : DownloadItem {
-        return fragmentAdapter.getDownloadItem(selectedTabPosition)
+        return fragmentAdapter.getDownloadItemOrNull(selectedTabPosition)
+            ?: downloadViewModel.createDownloadItemFromResult(
+                result,
+                givenType = tabTypeForPosition(selectedTabPosition)
+            ).apply {
+                incognito = this@DownloadBottomSheetDialog.incognito
+            }
     }
 
     private fun getAlsoAudioDownloadItem(finished: (it: DownloadItem) -> Unit) {
+        val audioFragment = fragmentAdapter.getAudioFragment()
+        val videoItem = fragmentAdapter.getVideoFragment()?.downloadItem
+        val firstAudioId = videoItem?.videoPreferences?.audioFormatIDs?.firstOrNull()
         try {
-            val ff = fragmentAdapter.fragments[0] as DownloadAudioFragment
-            getDownloadItem(1).videoPreferences.audioFormatIDs.apply {
-                if (this.isNotEmpty()) {
-                    ff.updateSelectedAudioFormat(this.first())
-                }
+            val ff = audioFragment!!
+            if (!firstAudioId.isNullOrBlank()) {
+                ff.updateSelectedAudioFormat(firstAudioId)
             }
             finished(ff.downloadItem)
         }catch (e: Exception){
@@ -647,11 +805,13 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
                 FragmentManager.FragmentLifecycleCallbacks() {
 
                 override fun onFragmentStarted(fm: FragmentManager, f: Fragment) {
+                    if (f !is DownloadAudioFragment) return
                     fragmentManager?.unregisterFragmentLifecycleCallbacks(this)
-                    val ff = (f as DownloadAudioFragment)
-                    ff.requireView().post {
-                        ff.updateSelectedAudioFormat(getDownloadItem(1).videoPreferences.audioFormatIDs.first())
-                        finished(ff.downloadItem)
+                    f.requireView().post {
+                        if (!firstAudioId.isNullOrBlank()) {
+                            f.updateSelectedAudioFormat(firstAudioId)
+                        }
+                        finished(f.downloadItem)
                     }
                     super.onFragmentStarted(fm, f)
                 }
@@ -660,7 +820,7 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
             }
 
             fragmentManager?.registerFragmentLifecycleCallbacks(fragmentLifecycleCallback, true)
-            viewPager2.setCurrentItem(0, true)
+            viewPager2.setCurrentItem(1, true)
         }
     }
 

@@ -532,7 +532,7 @@
     <string name="tap_to_see_changes_and_install">Koppintson a változtatások megtekintéséhez és a telepítéshez</string>
     <string name="view">Megtekintés</string>
     <string name="download_anyway">Letöltés mindenképp</string>
-    <string name="welcome_title">Üdvözlünk a YTDLnisben</string>
+    <string name="welcome_title">Üdvözlünk a YTDL Proben</string>
     <string name="optional">Opcionális</string>
     <string name="search_results">Keresési eredmények</string>
     <plurals name="queue_items">
@@ -591,7 +591,7 @@
     <string name="notset">Nincs beállítva</string>
     <string name="external">Külső</string>
     <string name="exit">Kilépés</string>
-    <string name="packages_description">A csomagok olyan segédalkalmazások, amelyeket a YTDLnis a yt-dlp parancsok végrehajtásához vesz igénybe. Ezek egy része már eleve beépítve megtalálható az alkalmazásban, de lehetőség van újabb, időközben megjelent verziók telepítésére is – anélkül, hogy magát az alkalmazást frissíteni kellene. A telepített APK-fájlok felülírják az alkalmazásba beépített, eredeti verziókat.</string>
+    <string name="packages_description">A csomagok olyan segédalkalmazások, amelyeket a YTDL Pro a yt-dlp parancsok végrehajtásához vesz igénybe. Ezek egy része már eleve beépítve megtalálható az alkalmazásban, de lehetőség van újabb, időközben megjelent verziók telepítésére is – anélkül, hogy magát az alkalmazást frissíteni kellene. A telepített APK-fájlok felülírják az alkalmazásba beépített, eredeti verziókat.</string>
     <plurals name="every_minutes">
         <item quantity="one">Percenként</item>
         <item quantity="other">Minden %d percben</item>
@@ -672,7 +672,7 @@
     <string name="welcome_guide_summary">Az útmutató mindent tartalmaz az alkalmazással kapcsolatban: a letöltést, a parancssablonokat és a gyakori problémák megoldását. Bármikor megnyithatod a weboldalon keresztül.</string>
     <string name="welcome_open_guide">Az útmutató megnyitása</string>
     <string name="welcome_permissions_title">Engedélyek</string>
-    <string name="welcome_permissions_summary">A YTDLnis ezekkel működik a legjobban. Később változtathatsz rajtuk a beállításokban.</string>
+    <string name="welcome_permissions_summary">A YTDL Pro ezekkel működik a legjobban. Később változtathatsz rajtuk a beállításokban.</string>
     <string name="welcome_perm_storage">Tárhely hozzáférés</string>
     <string name="welcome_perm_storage_summary">Szükséges a letöltések eszközre történő mentéséhez.</string>
     <string name="welcome_perm_notifications">Értesítések</string>
@@ -687,7 +687,7 @@
     <string name="welcome_perm_folders_header">Helyreállított mappák</string>
     <string name="welcome_perm_folders_summary">A biztonsági mentés ezeket a mappákat használja, de az alkalmazás elveszítette a hozzáférést hozzájuk. Engedélyezze újra mindegyiket, vagy válasszon helyettük egy másik mappát.</string>
     <string name="welcome_updates_title">Frissítések</string>
-    <string name="welcome_updates_summary">Válaszd ki, hogyan maradjon naprakész a YTDLnis.</string>
+    <string name="welcome_updates_summary">Válaszd ki, hogyan maradjon naprakész a YTDL Pro.</string>
     <string name="welcome_next">Tovább</string>
     <string name="welcome_finish">Befejez</string>
     <string name="lyrics">Dalszöveg</string>
@@ -703,7 +703,7 @@
     <string name="embed_lyrics_summary">Dalszövegek lekérése az lrclib.net oldalról és beágyazásuk a letöltött hangfájlokba</string>
     <string name="save_lrc_file_summary">A szinkronizált dalszövegeket .lrc fájlként mentse a letöltött hangfájlok mellé</string>
     <string name="crop_unsupported">A vágás nem elérhető ehhez az elemhez</string>
-    <string name="bgutils_info">Származási igazoló token (POT) szolgáltató a yt-dlp-hez.\nHa ez engedélyezve van, a YTDLnis futtatja azt a HTTP-szervert, amely előállítja a POT-ot, és telepíti a hozzá tartozó bővítményt, amit a yt-dlp használ.</string>
+    <string name="bgutils_info">Származási igazoló token (POT) szolgáltató a yt-dlp-hez.\nHa ez engedélyezve van, a YTDL Pro futtatja azt a HTTP-szervert, amely előállítja a POT-ot, és telepíti a hozzá tartozó bővítményt, amit a yt-dlp használ.</string>
     <string name="bgutils_pot_generation_script_summary">Minden egyes yt-dlp-hívás többletterheléssel jár, mivel a szkript futtatásához egy új js-futtatókörnyezet-folyamatot kell elindítani. Ez a módszer nem ajánlott nagy párhuzamosságot igénylő felhasználás esetén.</string>
     <string name="bgutils_pot_generation_script_info">A BgUtils POT Provider használatához az alkalmazásnak le kell töltenie a Brainicism/bgutil-ytdlp-pot-provider tárolót a GitHubról, majd el kell indítania a telepítést. Ez eltarthat egy ideig. Folytatja?</string>
     <string name="no_cookies_found">Nem találhatók sütik ehhez az oldalhoz. Fejezze be a bejelentkezést, majd próbálja újra</string>

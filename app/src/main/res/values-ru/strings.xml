@@ -591,7 +591,7 @@
         <item quantity="many">Каждые %d минуты</item>
         <item quantity="other">Каждые %d минуты</item>
     </plurals>
-    <string name="bgutils_info">Поставщик токенов подтверждения происхождения (POT) для yt-dlp.\nЕсли эта опция включена, YTDLnis запускает HTTP-сервер, который генерирует POT и устанавливает соответствующий плагин, использующий yt-dlp.</string>
+    <string name="bgutils_info">Поставщик токенов подтверждения происхождения (POT) для yt-dlp.\nЕсли эта опция включена, YTDL Pro запускает HTTP-сервер, который генерирует POT и устанавливает соответствующий плагин, использующий yt-dlp.</string>
     <string name="bgutils_pot_generation_script">Скрипт генерации</string>
     <string name="bgutils_pot_generation_server">HTTP-сервер</string>
     <string name="bgutils_pot_generation_script_summary">Каждый вызов yt-dlp приводит к дополнительным затратам ресурсов при создании нового процесса среды выполнения JS для запуска скрипта. Этот метод не рекомендуется использовать при высоком уровне параллельности.</string>
@@ -604,7 +604,7 @@
     <string name="notset">Не указано</string>
     <string name="external">Внешний</string>
     <string name="exit">Выход</string>
-    <string name="packages_description">Пакеты — это вспомогательные приложения, которые YTDLnis использует для выполнения команд yt-dlp. Некоторые из них уже встроены в это приложение, но вы можете установить более новые версии без необходимости обновлять программу. Установленные APK заменяют встроенные версии, которые использует приложение</string>
+    <string name="packages_description">Пакеты — это вспомогательные приложения, которые YTDL Pro использует для выполнения команд yt-dlp. Некоторые из них уже встроены в это приложение, но вы можете установить более новые версии без необходимости обновлять программу. Установленные APK заменяют встроенные версии, которые использует приложение</string>
     <string name="bgutils_pot_generation_script_info">Чтобы использовать POT-провайдер от BgUtils, приложению необходимо загрузить репозиторий Brainicism/bgutil-ytdlp-pot-provider с GitHub и начать установку. Это может занять некоторое время. Продолжить?</string>
     <string name="burn_subs">Записать субтитры</string>
     <string name="check_clipboard_home_summary">Автоматически обнаруживать URL в буфере обмена на главном экране</string>
@@ -662,7 +662,7 @@
     <string name="merge_cuts">Объединить вырезанные фрагменты в один файл</string>
     <string name="write_ytdlp_terminal">Добавлять «yt-dlp» при открытии терминала</string>
     <string name="clear">Очистить</string>
-    <string name="welcome_title">Добро пожаловать в YTDLnis</string>
+    <string name="welcome_title">Добро пожаловать в YTDL Pro</string>
     <string name="welcome_subtitle">Скачивайте видео и аудио с помощью yt-dlp. Давайте сначала настроим несколько вещей.</string>
     <string name="welcome_get_started">Начнём</string>
     <string name="welcome_restore_backup">Восстановление из резервной копии</string>
@@ -672,7 +672,7 @@
     <string name="welcome_guide_summary">Руководство охватывает всё о программе, загрузке, шаблонах команд и решении типовых проблем. Вы можете в любое время открыть его на сайте.</string>
     <string name="welcome_open_guide">Открыть руководство</string>
     <string name="welcome_permissions_title">Разрешения</string>
-    <string name="welcome_permissions_summary">YTDLnis лучше всего работает с этими параметрами. Их можно изменить позже в настройках.</string>
+    <string name="welcome_permissions_summary">YTDL Pro лучше всего работает с этими параметрами. Их можно изменить позже в настройках.</string>
     <string name="welcome_perm_storage">Доступ к хранилищу</string>
     <string name="welcome_perm_storage_summary">Необходимо сохранить загруженные файлы на устройстве.</string>
     <string name="welcome_perm_notifications">Уведомления</string>
@@ -685,7 +685,7 @@
     <string name="welcome_allowed">Разрешено</string>
     <string name="welcome_required">Обязательно</string>
     <string name="welcome_updates_title">Обновления</string>
-    <string name="welcome_updates_summary">Выберите, как YTDLnis будет обновляться.</string>
+    <string name="welcome_updates_summary">Выберите, как YTDL Pro будет обновляться.</string>
     <string name="welcome_next">Далее</string>
     <string name="welcome_finish">Завершить</string>
     <string name="lyrics">Текст песни</string>

@@ -565,7 +565,7 @@
     <string name="max_delay">Độ trễ tối đa (giây)</string>
     <string name="no_delay">Không thiết lập độ trễ</string>
     <string name="waiting_download_delay">Đang chờ tải xuống (%s giây)…</string>
-    <string name="bgutils_info">Một nhà cung cấp mã thông báo chứng minh nguồn gốc (POT) cho yt-dlp.\nKhi được kích hoạt, YTDLnis sẽ lưu trữ máy chủ HTTP tạo ra POT và cài đặt plugin liên quan mà yt-dlp sử dụng.</string>
+    <string name="bgutils_info">Một nhà cung cấp mã thông báo chứng minh nguồn gốc (POT) cho yt-dlp.\nKhi được kích hoạt, YTDL Pro sẽ lưu trữ máy chủ HTTP tạo ra POT và cài đặt plugin liên quan mà yt-dlp sử dụng.</string>
     <string name="bgutils_pot_generation_server">Máy chủ HTTP</string>
     <string name="bgutils_pot_generation_script_summary">Mỗi lần gọi yt-dlp đều phát sinh chi phí khởi tạo một tiến trình runtime JavaScript mới để chạy script. Phương pháp này không được khuyến khích sử dụng cho các tác vụ có độ đồng thời cao.</string>
     <string name="bgutils_pot_server_summary">Đây là máy chủ HTTP JavaScript, trên cổng 4416. Nếu bị lỗi, nó sẽ tự động khởi động lại khi hàng đợi tải xuống bắt đầu thực thi hoặc khi quá trình quan sát nguồn được lên lịch. Để tắt nó, bạn phải thực hiện thao tác tắt thủ công!</string>
@@ -577,7 +577,7 @@
     <string name="notset">Chưa được thiết lập</string>
     <string name="external">Bên ngoài</string>
     <string name="exit">Thoát</string>
-    <string name="packages_description">Các gói là các ứng dụng hỗ trợ mà YTDLnis sử dụng để hỗ trợ các lệnh yt-dlp. Một số gói đã được tích hợp sẵn, nhưng bạn có thể cài đặt các phiên bản mới hơn đã được phát hành mà không cần cập nhật ứng dụng. Các tệp APK đã cài đặt sẽ thay thế phiên bản mặc định mà ứng dụng sử dụng.</string>
+    <string name="packages_description">Các gói là các ứng dụng hỗ trợ mà YTDL Pro sử dụng để hỗ trợ các lệnh yt-dlp. Một số gói đã được tích hợp sẵn, nhưng bạn có thể cài đặt các phiên bản mới hơn đã được phát hành mà không cần cập nhật ứng dụng. Các tệp APK đã cài đặt sẽ thay thế phiên bản mặc định mà ứng dụng sử dụng.</string>
     <string name="bgutils_pot_generation_script_info">Để sử dụng BgUtils POT Provider, ứng dụng cần tải xuống kho lưu trữ Brainicism/bgutil-ytdlp-pot-provider từ github và bắt đầu cài đặt. Quá trình này có thể mất một lúc. Bạn có muốn tiếp tục không?</string>
     <string name="burn_subs">Ghi phụ đề</string>
     <string name="check_clipboard_home_summary">Tự động phát hiện URL trong clipboard trên màn hình chính</string>
@@ -630,7 +630,7 @@
     <string name="download_anyway">Vẫn tải xuống</string>
     <string name="write_ytdlp_terminal">Tự động viết yt-dlp trong terminal</string>
     <string name="clear">Xoá</string>
-    <string name="welcome_title">Chào mừng đến với YTDLnis</string>
+    <string name="welcome_title">Chào mừng đến với YTDL Pro</string>
     <string name="welcome_subtitle">Tải xuống video và âm thanh bằng yt-dlp. Trước tiên, hãy thiết lập một vài thứ.</string>
     <string name="welcome_get_started">Bắt đầu</string>
     <string name="welcome_restore_backup">Khôi phục từ bản sao lưu</string>
@@ -640,7 +640,7 @@
     <string name="welcome_guide_summary">Hướng dẫn này bao gồm mọi thứ về ứng dụng, cách tải xuống, các mẫu lệnh và cách khắc phục các sự cố thường gặp. Bạn có thể mở nó bất cứ lúc nào từ trang web.</string>
     <string name="welcome_open_guide">Hướng dẫn mở</string>
     <string name="welcome_permissions_title">Quyền</string>
-    <string name="welcome_permissions_summary">YTDLnis hoạt động tốt nhất với các thiết lập này. Bạn có thể thay đổi chúng sau trong phần cài đặt.</string>
+    <string name="welcome_permissions_summary">YTDL Pro hoạt động tốt nhất với các thiết lập này. Bạn có thể thay đổi chúng sau trong phần cài đặt.</string>
     <string name="welcome_perm_storage">Truy cập bộ nhớ</string>
     <string name="welcome_perm_storage_summary">Cần thiết để lưu các tệp đã tải xuống vào thiết bị của bạn.</string>
     <string name="welcome_perm_notifications">Thông báo</string>
@@ -655,7 +655,7 @@
     <string name="welcome_perm_folders_header">Các thư mục đã được khôi phục</string>
     <string name="welcome_perm_folders_summary">Bản sao lưu của bạn sử dụng các thư mục này, nhưng ứng dụng đã mất quyền truy cập vào chúng. Hãy cho phép truy cập lại từng thư mục hoặc chọn một thư mục khác để sử dụng thay thế.</string>
     <string name="welcome_updates_title">Cập nhật</string>
-    <string name="welcome_updates_summary">Chọn cách YTDLnis cập nhật.</string>
+    <string name="welcome_updates_summary">Chọn cách YTDL Pro cập nhật.</string>
     <string name="welcome_next">Kế tiếp</string>
     <string name="welcome_finish">Hoàn thành</string>
     <string name="lyrics">Lời bài hát</string>

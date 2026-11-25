@@ -18,7 +18,7 @@
         <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="20dp"
+            android:layout_marginHorizontal="16dp"
             android:layout_marginTop="20dp"
             android:orientation="horizontal">
 
@@ -52,10 +52,12 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:maxLines="2"
-                android:layout_marginEnd="20dp"
+                android:ellipsize="end"
+                android:layout_marginEnd="8dp"
+                android:accessibilityHeading="true"
                 android:singleLine="false"
                 android:text="@string/download"
-                android:textSize="22sp"
+                android:textSize="19sp"
                 app:layout_constraintEnd_toStartOf="@+id/bottomsheet_schedule_button"
                 app:layout_constraintHorizontal_bias="0.0"
                 app:layout_constraintStart_toStartOf="parent"
@@ -88,7 +90,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:maxLines="2"
-                android:layout_marginEnd="20dp"
+                android:layout_marginEnd="8dp"
                 android:singleLine="false"
                 android:text="@string/configure_download"
                 android:textSize="12sp"
@@ -102,7 +104,7 @@
                 style="@style/Widget.Material3Expressive.Button.IconButton.Filled"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="10dp"
+                android:layout_marginEnd="6dp"
                 android:outlineProvider="none"
                 app:icon="@drawable/ic_clock"
                 android:contentDescription="@string/schedule"
@@ -118,9 +120,11 @@
                 android:autoLink="all"
                 android:elevation="0dp"
                 android:outlineProvider="none"
+                android:paddingHorizontal="14dp"
                 android:stateListAnimator="@null"
                 android:text="@string/download"
                 app:icon="@drawable/ic_down"
+                app:iconPadding="6dp"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toTopOf="parent"
@@ -135,24 +139,27 @@
             android:layout_height="wrap_content"
             android:layout_margin="10dp"
             android:backgroundTint="@android:color/transparent"
-            app:tabGravity="start"
+            app:tabGravity="fill"
             app:tabMinWidth="0dp"
-            app:tabMode="scrollable">
+            app:tabMode="fixed">
 
             <com.google.android.material.tabs.TabItem
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
-                android:text="@string/audio" />
-
-            <com.google.android.material.tabs.TabItem
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
+                android:icon="@drawable/ic_video"
                 android:text="@string/video" />
 
             <com.google.android.material.tabs.TabItem
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
-                android:text="@string/command" />
+                android:icon="@drawable/ic_music"
+                android:text="@string/audio" />
+
+            <com.google.android.material.tabs.TabItem
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:icon="@drawable/ic_image"
+                android:text="@string/image" />
 
 
         </com.google.android.material.tabs.TabLayout>

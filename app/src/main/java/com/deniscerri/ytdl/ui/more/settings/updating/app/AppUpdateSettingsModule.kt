@@ -11,6 +11,7 @@ import com.deniscerri.ytdl.BuildConfig
 import com.deniscerri.ytdl.R
 import com.deniscerri.ytdl.database.models.GithubRelease
 import com.deniscerri.ytdl.database.viewmodel.SettingsViewModel
+import com.deniscerri.ytdl.ui.more.ForkInfoDialog
 import com.deniscerri.ytdl.ui.more.settings.SettingHost
 import com.deniscerri.ytdl.ui.more.settings.SettingModule
 import com.deniscerri.ytdl.ui.more.settings.updating.UpdateChannelPreference
@@ -25,7 +26,8 @@ import java.io.File
 
 
 object AppUpdateSettingsModule : SettingModule {
-    private val canUpdateApp = BuildConfig.FLAVOR == "github"
+    private val canUpdateApp: Boolean
+        get() = UpdateUtil.isAppSelfUpdateConfigured() && BuildConfig.FLAVOR == "github"
 
     override fun bindLogic(pref: Preference, host: SettingHost) {
         val context = pref.context
@@ -73,6 +75,12 @@ object AppUpdateSettingsModule : SettingModule {
                     true
                 }
             }
+            "changelog" -> {
+                pref.setOnPreferenceClickListener {
+                    ForkInfoDialog.show(host.getHostContext())
+                    true
+                }
+            }
         }
     }
 
@@ -84,10 +92,9 @@ object AppUpdateSettingsModule : SettingModule {
 
     private fun refreshDetails(context: Context, card: UpdateStatusCardPreference, preferences: SharedPreferences) {
         val architecture = File(context.applicationInfo.nativeLibraryDir).name
-        // store builds update through their store, so there is no channel or check time to show
         if (!canUpdateApp) {
             card.subtitle = architecture
-            card.detail = null
+            card.detail = context.getString(R.string.app_update_manual_notice)
             return
         }
         val channel = context.getString(when (selectedChannel(preferences)) {

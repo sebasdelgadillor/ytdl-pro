@@ -35,8 +35,12 @@ import com.deniscerri.ytdl.util.Extensions.fixYtdlpPath
 import com.deniscerri.ytdl.util.Extensions.getMediaDuration
 import com.deniscerri.ytdl.util.Extensions.toStringDuration
 import com.deniscerri.ytdl.util.FileUtil
+import com.deniscerri.ytdl.util.ImageDownloadHelper
 import com.deniscerri.ytdl.util.NotificationUtil
+import com.deniscerri.ytdl.util.PlatformRateLimiter
+import com.deniscerri.ytdl.util.ProcessCacheGuardian
 import com.deniscerri.ytdl.util.WorkerEventBus
+import com.deniscerri.ytdl.util.extractors.fallback.LocalFallbackEngine
 import com.deniscerri.ytdl.util.extractors.ytdlp.YTDLPUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -146,6 +150,10 @@ class DownloadWorker(
             val running = ArrayList(runningYTDLInstances)
             val useScheduler = sharedPreferences.getBoolean("use_scheduler", false)
             if (items.isEmpty() && running.isEmpty()) {
+                runCatching {
+                    val protectedIds = dao.getActiveAndQueuedDownloadIDs().toSet()
+                    ProcessCacheGuardian.sweepOrphanedCaches(context, protectedIds)
+                }
                 WorkManager.Companion.getInstance(context).cancelWorkById(this@DownloadWorker.id)
                 return@collectLatest
             }
@@ -181,7 +189,7 @@ class DownloadWorker(
                 notificationUtil.notify(downloadItem.id.toInt(), notification)
 
                 workerScope.launch {
-                    val processDownloadBlock : suspend () -> Unit = {
+                    val processDownloadBlock : suspend () -> Unit = processDownloadBlock@{
 
                         downloadItem.status = DownloadRepository.Status.Active.toString()
                         dao.update(downloadItem)
@@ -206,7 +214,24 @@ class DownloadWorker(
                             }
                         }
 
-                        val request = ytdlpUtil.buildYTDLRequest(downloadItem)
+                        val waitMs = PlatformRateLimiter.awaitTurnForUrl(downloadItem.url) { pendingWaitMs ->
+                            val waitSec = (pendingWaitMs + 999L) / 1000L
+                            WorkerEventBus.post(
+                                WorkerProgress(
+                                    0,
+                                    context.getString(R.string.waiting_platform_cooldown, waitSec),
+                                    downloadItem.id,
+                                    downloadItem.logID
+                                )
+                            )
+                        }
+                        if (waitMs > 0L && this@DownloadWorker.isStopped) return@processDownloadBlock
+
+                        val request = if (downloadItem.type == DownloadType.image) {
+                            null
+                        } else {
+                            ytdlpUtil.buildYTDLRequest(downloadItem)
+                        }
 
                         // DISABLED BECAUSE YT_DLP CONSIDERS DOWNLOAD FAILURE IF -U PART FAILS, ytdlnis #1043
     //                    val updateYTDLP = sharedPreferences.getBoolean("update_ytdlp_while_downloading", false)
@@ -215,13 +240,15 @@ class DownloadWorker(
     //                    }
 
                         downloadItem.status = DownloadRepository.Status.Active.toString()
-                        CoroutineScope(Dispatchers.IO).launch {
-                            delay(1500)
-                            //update item if its incomplete
-                            resultRepo.updateDownloadItem(downloadItem)?.apply {
-                                val status = dao.checkStatus(this.id)
-                                if (status == DownloadRepository.Status.Active) {
-                                    dao.updateWithoutUpsert(this)
+                        if (downloadItem.type != DownloadType.image) {
+                            CoroutineScope(Dispatchers.IO).launch {
+                                delay(1500)
+                                //update item if its incomplete
+                                resultRepo.updateDownloadItem(downloadItem)?.apply {
+                                    val status = dao.checkStatus(this.id)
+                                    if (status == DownloadRepository.Status.Active) {
+                                        dao.updateWithoutUpsert(this)
+                                    }
                                 }
                             }
                         }
@@ -244,7 +271,11 @@ class DownloadWorker(
                         val writeDirectly = writtenPath || (!cacheDownloads && targetDir.canWrite())
 
 
-                        val commandString = ytdlpUtil.parseYTDLRequestString(request)
+                        val commandString = if (request != null) {
+                            ytdlpUtil.parseYTDLRequestString(request)
+                        } else {
+                            "ImageDownloadHelper (${downloadItem.container})"
+                        }
                         val initialLogDetails = "Downloading:\n" +
                                 "Title: ${downloadItem.title}\n" +
                                 "URL: ${downloadItem.url}\n" +
@@ -267,10 +298,122 @@ class DownloadWorker(
                             dao.update(downloadItem)
                         }
 
+                        if (downloadItem.type == DownloadType.image) {
+                            val imgResult = ImageDownloadHelper.downloadImage(context, downloadItem, tempFileDir) { p, msg ->
+                                WorkerEventBus.post(
+                                    WorkerProgress(p, msg, downloadItem.id, downloadItem.logID)
+                                )
+                                notificationUtil.updateDownloadNotification(
+                                    downloadItem.id.toInt(),
+                                    msg,
+                                    p,
+                                    0,
+                                    downloadItem.title.ifEmpty { downloadItem.url },
+                                    NotificationUtil.Companion.DOWNLOAD_SERVICE_CHANNEL_ID
+                                )
+                            }
+
+                            imgResult.onSuccess {
+                                notificationUtil.clearNotificationThrottleState(downloadItem.id.toInt())
+                                val finalPaths = withContext(Dispatchers.IO) {
+                                    FileUtil.moveFile(
+                                        tempFileDir.absoluteFile,
+                                        context,
+                                        downloadLocation,
+                                        keepCache
+                                    ) { p ->
+                                        WorkerEventBus.post(
+                                            WorkerProgress(
+                                                p,
+                                                "Moving file to ${FileUtil.formatPath(downloadLocation)}",
+                                                downloadItem.id,
+                                                downloadItem.logID
+                                            )
+                                        )
+                                    }
+                                }.distinct().toMutableList()
+
+                                FileUtil.scanMedia(finalPaths, context)
+
+                                if (!downloadItem.incognito && finalPaths.isNotEmpty()) {
+                                    val unixTime = System.currentTimeMillis() / 1000
+                                    val firstFile = File(finalPaths.first())
+                                    downloadItem.format.filesize = firstFile.length()
+                                    downloadItem.format.container = firstFile.extension
+                                    val historyItem = HistoryItem(
+                                        0,
+                                        downloadItem.url,
+                                        downloadItem.title,
+                                        downloadItem.author,
+                                        downloadItem.duration,
+                                        downloadItem.thumb,
+                                        downloadItem.type,
+                                        unixTime,
+                                        finalPaths,
+                                        downloadItem.website,
+                                        downloadItem.format,
+                                        downloadItem.format.filesize,
+                                        downloadItem.id,
+                                        "ImageDownloadHelper: ${downloadItem.format.url ?: downloadItem.thumb}"
+                                    )
+                                    historyDao.insert(historyItem)
+                                }
+
+                                withContext(Dispatchers.Main) {
+                                    notificationUtil.cancelDownloadNotification(downloadItem.id.toInt())
+                                    notificationUtil.createDownloadFinished(
+                                        downloadItem.id,
+                                        downloadItem.title.ifEmpty { downloadItem.url },
+                                        downloadItem.type,
+                                        finalPaths.ifEmpty { null },
+                                        resources
+                                    )
+                                }
+
+                                dao.delete(downloadItem.id)
+                                if (logDownloads) {
+                                    logRepo.update(initialLogDetails + "Image downloaded successfully.", logItem.id, true)
+                                }
+                            }.onFailure { err ->
+                                notificationUtil.clearNotificationThrottleState(downloadItem.id.toInt())
+                                withContext(Dispatchers.Main) {
+                                    notificationUtil.cancelDownloadNotification(downloadItem.id.toInt())
+                                }
+                                if (logDownloads) {
+                                    logRepo.update(err.message ?: "", logItem.id)
+                                } else {
+                                    logString.append("${err.message ?: err.stackTraceToString()}\n")
+                                    logItem.content = logString.toString()
+                                    val logID = logRepo.insert(logItem)
+                                    downloadItem.logID = logID
+                                }
+                                ProcessCacheGuardian.purgeDownloadCache(
+                                    context = context,
+                                    downloadId = downloadItem.id,
+                                    url = downloadItem.url,
+                                    keepCache = false
+                                )
+                                downloadItem.status = DownloadRepository.Status.Error.toString()
+                                runBlocking { dao.update(downloadItem) }
+                                notificationUtil.createDownloadErrored(
+                                    downloadItem.id,
+                                    downloadItem.title.ifEmpty { downloadItem.url },
+                                    err.message,
+                                    downloadItem.logID,
+                                    resources
+                                )
+                                WorkerEventBus.post(
+                                    WorkerProgress(100, err.toString(), downloadItem.id, downloadItem.logID)
+                                )
+                            }
+                            return@processDownloadBlock
+                        }
+
+                        val activeRequest = request!!
                         runCatching {
                             RuntimeManager.getInstance().destroyProcessById(downloadItem.id.toString())
                             RuntimeManager.getInstance().execute(
-                                request = request,
+                                request = activeRequest,
                                 processId = downloadItem.id.toString(),
                                 redirectErrorStream = true,
                                 usingCacheDir = true
@@ -407,11 +550,11 @@ class DownloadWorker(
 
                                 FileUtil.scanMedia(finalPaths, context)
 
-                                FileUtil.deleteConfigFiles(request)
+                                FileUtil.deleteConfigFiles(activeRequest)
 
                                 //put download in history
                                 if (!downloadItem.incognito) {
-                                    if (request.hasOption("--download-archive") && finalPaths.isEmpty()) {
+                                    if (activeRequest.hasOption("--download-archive") && finalPaths.isEmpty()) {
                                         handler.postDelayed({
                                             Toast.makeText(
                                                 context,
@@ -487,13 +630,166 @@ class DownloadWorker(
 
                         }.onFailure {
                             notificationUtil.clearNotificationThrottleState(downloadItem.id.toInt())
-                            FileUtil.deleteConfigFiles(request)
+                            FileUtil.deleteConfigFiles(activeRequest)
+                            if (this@DownloadWorker.isStopped || it is RuntimeManager.CanceledException) {
+                                withContext(Dispatchers.Main) {
+                                    notificationUtil.cancelDownloadNotification(downloadItem.id.toInt())
+                                }
+                                return@onFailure
+                            }
+
+                            if (PlatformRateLimiter.isRateLimitError(it.message)) {
+                                PlatformRateLimiter.recordRateLimitForUrl(downloadItem.url)
+                            }
+
+                            val fallbackEnabled = sharedPreferences.getBoolean("invisible_local_fallback", true)
+                            val canUseFallback = fallbackEnabled &&
+                                downloadItem.type != DownloadType.command &&
+                                downloadItem.url.startsWith("http", ignoreCase = true)
+
+                            var finalError: Throwable = it
+                            if (canUseFallback) {
+                                logString.append("Primary extractor failed: ${it.message ?: it.javaClass.simpleName}\n")
+                                tempFileDir.deleteRecursively()
+                                tempFileDir.mkdirs()
+
+                                val fallbackResult = LocalFallbackEngine.download(
+                                    context = context,
+                                    item = downloadItem,
+                                    tempFileDir = tempFileDir,
+                                    processId = downloadItem.id.toString(),
+                                    isCancelled = { this@DownloadWorker.isStopped }
+                                ) { p, msg ->
+                                    WorkerEventBus.post(
+                                        WorkerProgress(p, msg, downloadItem.id, downloadItem.logID)
+                                    )
+                                    notificationUtil.updateDownloadNotification(
+                                        downloadItem.id.toInt(),
+                                        msg,
+                                        p,
+                                        0,
+                                        downloadItem.title.ifEmpty { downloadItem.url },
+                                        NotificationUtil.Companion.DOWNLOAD_SERVICE_CHANNEL_ID
+                                    )
+                                }
+
+                                if (fallbackResult.isSuccess) {
+                                    val fb = fallbackResult.getOrThrow()
+                                    if (downloadItem.title.isBlank() && !fb.resolvedTitle.isNullOrBlank()) {
+                                        downloadItem.title = fb.resolvedTitle
+                                    }
+                                    if (downloadItem.author.isBlank() && !fb.resolvedAuthor.isNullOrBlank()) {
+                                        downloadItem.author = fb.resolvedAuthor
+                                    }
+                                    if (downloadItem.thumb.isBlank() && !fb.resolvedThumb.isNullOrBlank()) {
+                                        downloadItem.thumb = fb.resolvedThumb
+                                    }
+
+                                    notificationUtil.clearNotificationThrottleState(downloadItem.id.toInt())
+                                    runBlocking {
+                                        var finalPaths = withContext(Dispatchers.IO) {
+                                            FileUtil.moveFile(
+                                                tempFileDir.absoluteFile,
+                                                context,
+                                                downloadLocation,
+                                                keepCache
+                                            ) { p ->
+                                                WorkerEventBus.post(
+                                                    WorkerProgress(
+                                                        p,
+                                                        "Moving file to ${FileUtil.formatPath(downloadLocation)}",
+                                                        downloadItem.id,
+                                                        downloadItem.logID
+                                                    )
+                                                )
+                                            }.filter { p -> !p.matches("\\.(description)|(txt)\$".toRegex()) }
+                                                .toMutableList()
+                                        }
+
+                                        val nonMediaExtensions = mutableListOf<String>().apply {
+                                            addAll(context.getStringArray(R.array.thumbnail_containers_values))
+                                            addAll(
+                                                context.getStringArray(R.array.sub_formats_values)
+                                                    .filter { s -> s.isNotBlank() }
+                                            )
+                                            add("description")
+                                            add("txt")
+                                        }
+                                        finalPaths = finalPaths.filter { path ->
+                                            !nonMediaExtensions.any { ext -> path.endsWith(ext) }
+                                        }.distinct().toMutableList()
+                                        finalPaths.sortBy { p -> File(p).lastModified() }
+
+                                        FileUtil.scanMedia(finalPaths, context)
+
+                                        if (!downloadItem.incognito && finalPaths.isNotEmpty()) {
+                                            val unixTime = System.currentTimeMillis() / 1000
+                                            val firstFile = File(finalPaths.first())
+                                            val d = firstFile.getMediaDuration(context)
+                                            if (d > 0) downloadItem.duration = d.toStringDuration(Locale.US)
+                                            downloadItem.format.filesize = firstFile.length()
+                                            downloadItem.format.container = firstFile.extension
+
+                                            val historyItem = HistoryItem(
+                                                0,
+                                                downloadItem.url,
+                                                downloadItem.title,
+                                                downloadItem.author,
+                                                downloadItem.duration,
+                                                downloadItem.thumb,
+                                                downloadItem.type,
+                                                unixTime,
+                                                finalPaths,
+                                                downloadItem.website,
+                                                downloadItem.format,
+                                                downloadItem.format.filesize,
+                                                downloadItem.id,
+                                                "$commandString\n[fallback:${fb.engineUsed}]"
+                                            )
+                                            historyDao.insert(historyItem)
+                                        }
+
+                                        withContext(Dispatchers.Main) {
+                                            notificationUtil.cancelDownloadNotification(downloadItem.id.toInt())
+                                            notificationUtil.createDownloadFinished(
+                                                downloadItem.id,
+                                                downloadItem.title.ifEmpty { downloadItem.url },
+                                                downloadItem.type,
+                                                finalPaths.ifEmpty { null },
+                                                resources
+                                            )
+                                        }
+
+                                        dao.delete(downloadItem.id)
+                                        if (logDownloads) {
+                                            logRepo.update(
+                                                initialLogDetails + logString.toString() + "\n[fallback:${fb.engineUsed}] completed",
+                                                logItem.id,
+                                                true
+                                            )
+                                        }
+                                    }
+                                    return@onFailure
+                                } else {
+                                    val fbErr = fallbackResult.exceptionOrNull()
+                                    if (this@DownloadWorker.isStopped || fbErr is RuntimeManager.CanceledException) {
+                                        withContext(Dispatchers.Main) {
+                                            notificationUtil.cancelDownloadNotification(downloadItem.id.toInt())
+                                        }
+                                        return@onFailure
+                                    }
+                                    if (fbErr != null) {
+                                        logString.append("Fallback engine failed: ${fbErr.message ?: fbErr.stackTraceToString()}\n")
+                                        finalError = it
+                                    }
+                                    tempFileDir.deleteRecursively()
+                                }
+                            }
+
                             withContext(Dispatchers.Main) {
                                 notificationUtil.cancelDownloadNotification(downloadItem.id.toInt())
                             }
-                            if (this@DownloadWorker.isStopped) return@onFailure
-                            if (it is RuntimeManager.CanceledException) return@onFailure
-                            if (it.message?.contains("JSONDecodeError") == true) {
+                            if (finalError.message?.contains("JSONDecodeError") == true) {
                                 val cachePath = FileUtil.getInfoJsonPath(context)
                                 val infoJsonName = MessageDigest.getInstance("MD5")
                                     .digest(downloadItem.url.toByteArray()).toHexString()
@@ -501,18 +797,24 @@ class DownloadWorker(
                             }
 
                             if (logDownloads) {
-                                logRepo.update(it.message ?: "", logItem.id)
+                                logRepo.update(logString.toString() + "\n" + (finalError.message ?: ""), logItem.id)
                             } else {
-                                logString.append("${it.message ?: it.stackTraceToString()}\n")
+                                logString.append("${finalError.message ?: finalError.stackTraceToString()}\n")
                                 logItem.content = logString.toString()
                                 val logID = logRepo.insert(logItem)
                                 downloadItem.logID = logID
                             }
 
 
-                            tempFileDir.delete()
+                            RuntimeManager.getInstance().destroyProcessById(downloadItem.id.toString())
+                            ProcessCacheGuardian.purgeDownloadCache(
+                                context = context,
+                                downloadId = downloadItem.id,
+                                url = downloadItem.url,
+                                keepCache = false
+                            )
 
-                            Log.e(TAG, context.getString(R.string.failed_download), it)
+                            Log.e(TAG, context.getString(R.string.failed_download), finalError)
                             notificationUtil.cancelDownloadNotification(downloadItem.id.toInt())
 
                             downloadItem.status = DownloadRepository.Status.Error.toString()
@@ -523,7 +825,7 @@ class DownloadWorker(
                             notificationUtil.createDownloadErrored(
                                 downloadItem.id,
                                 downloadItem.title.ifEmpty { downloadItem.url },
-                                it.message,
+                                finalError.message,
                                 downloadItem.logID,
                                 resources
                             )
@@ -531,7 +833,7 @@ class DownloadWorker(
                             WorkerEventBus.post(
                                 WorkerProgress(
                                     100,
-                                    it.toString(),
+                                    finalError.toString(),
                                     downloadItem.id,
                                     downloadItem.logID
                                 )

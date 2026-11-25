@@ -43,6 +43,7 @@ class Converters {
         return when(string){
             "audio" -> DownloadType.audio
             "video" -> DownloadType.video
+            "image" -> DownloadType.image
             else -> DownloadType.command
         }
     }

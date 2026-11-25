@@ -36,6 +36,9 @@ class UpdateUtil(var context: Context) {
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     fun tryGetNewVersion() : Result<GithubRelease> {
+        if (!isAppSelfUpdateConfigured()) {
+            return Result.failure(Error(context.getString(R.string.app_update_manual_notice)))
+        }
         try {
             val skippedVersions = sharedPreferences.getString("skip_updates", "")?.split(",")?.distinct()?.toMutableList() ?: mutableListOf()
             val res = fetchReleases()
@@ -101,10 +104,11 @@ class UpdateUtil(var context: Context) {
     }
 
     private fun fetchReleases(): List<GithubRelease> {
+        if (!isAppSelfUpdateConfigured()) return emptyList()
         val conn: HttpURLConnection
         var json = listOf<GithubRelease>()
         try {
-            conn = URL(RELEASES_URL).openConnection() as HttpURLConnection
+            conn = URL(APP_RELEASES_URL).openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
             conn.connectTimeout = 10000
             conn.readTimeout = 5000
@@ -226,10 +230,13 @@ class UpdateUtil(var context: Context) {
     }
 
     companion object {
-        const val RELEASES_URL = "https://api.github.com/repos/deniscerri/ytdlnis/releases"
+        // Set a fork GitHub Releases API URL here when hosting standalone OTA APK releases.
+        const val APP_RELEASES_URL = ""
         const val APP_LAST_CHECK_KEY = "app_last_update_check"
         const val YTDLP_LAST_CHECK_KEY = "ytdlp_last_update_check"
         var updatingYTDL = false
         var updatingApp = false
+
+        fun isAppSelfUpdateConfigured(): Boolean = APP_RELEASES_URL.isNotBlank()
     }
 }

@@ -36,6 +36,8 @@ import com.deniscerri.ytdl.util.Extensions.readJsonValue
 import com.deniscerri.ytdl.util.Extensions.toStringDuration
 import com.deniscerri.ytdl.util.FileUtil
 import com.deniscerri.ytdl.util.FormatUtil
+import com.deniscerri.ytdl.util.PlatformRateLimiter
+import com.deniscerri.ytdl.util.SiteSessionManager
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.Strictness
@@ -79,14 +81,26 @@ class YTDLPUtil(private val context: Context, private val commandTemplateDao: Co
         }
         addOption("--compat-options", compatOptions.joinToString(","))
 
-        val socketTimeout = sharedPreferences.getString("socket_timeout", "5")!!.ifEmpty { "5" }
+        val socketTimeout = sharedPreferences.getString("socket_timeout", "")!!.ifEmpty { "15" }
         addOption("--socket-timeout", socketTimeout)
+
+        val ratePolicy = url?.let { PlatformRateLimiter.policyForUrl(it) }
+        if (ratePolicy != null && ratePolicy.ytdlpSleepRequestsSec.isNotEmpty() && !hasOption("--sleep-requests")) {
+            addOption("--sleep-requests", ratePolicy.ytdlpSleepRequestsSec)
+        }
 
         if (sharedPreferences.getBoolean("force_ipv4", false)){
             addOption("-4")
         }
 
-        if (sharedPreferences.getBoolean("use_cookies", false)){
+        val sessionCtx = url?.let { SiteSessionManager.prepareSessionContextForUrl(context, it) }
+        if (sessionCtx != null) {
+            addOption("--cookies", sessionCtx.cookieFile.absolutePath)
+            if (sessionCtx.userAgent.isNotBlank() && !hasOption("--user-agent")) {
+                addOption("--user-agent", sessionCtx.userAgent)
+            }
+            addOption("--add-header", "Accept-Language:${Locale.getDefault().toLanguageTag()},en;q=0.9")
+        } else if (sharedPreferences.getBoolean("use_cookies", false)){
             FileUtil.getCookieFile(context){
                 addOption("--cookies", it)
             }
@@ -564,8 +578,11 @@ class YTDLPUtil(private val context: Context, private val commandTemplateDao: Co
 
     private fun YTDLRequest.loadOrWriteInfoJson(url: String) {
         val infoJsonFile = getInfoJsonFile(url)
-        //ignore info file if its older than 5 hours. puny measure to prevent expired formats in some cases
-        if (infoJsonFile != null && System.currentTimeMillis() - infoJsonFile.lastModified() <= (1000 * 60 * 60 * 5)) {
+        val domainCookieFile = SiteSessionManager.getDomainCookieFileIfPresent(context, url)
+        val invalidatedByCookies = domainCookieFile != null && infoJsonFile != null &&
+            domainCookieFile.lastModified() > infoJsonFile.lastModified()
+        //ignore info file if its older than 5 hours or invalidated by newer domain session cookies
+        if (infoJsonFile != null && !invalidatedByCookies && System.currentTimeMillis() - infoJsonFile.lastModified() <= (1000 * 60 * 60 * 5)) {
             addOption("--load-info-json", infoJsonFile.absolutePath)
         }else {
             addWriteInfoJson(url)
@@ -1103,11 +1120,17 @@ class YTDLPUtil(private val context: Context, private val commandTemplateDao: Co
         val concurrentFragments = sharedPreferences.getInt("concurrent_fragments", 1)
         if (concurrentFragments > 1) request.addOption("-N", concurrentFragments)
 
+        val ratePolicy = PlatformRateLimiter.policyForUrl(downloadItem.url)
         val retries = sharedPreferences.getString("retries", "")!!
         val fragmentRetries = sharedPreferences.getString("fragment_retries", "")!!
 
-        if(retries.isNotEmpty()) request.addOption("--retries", retries)
-        if(fragmentRetries.isNotEmpty()) request.addOption("--fragment-retries", fragmentRetries)
+        request.addOption("--retries", retries.ifEmpty { ratePolicy.maxRetries })
+        request.addOption("--retry-sleep", ratePolicy.retrySleepHttp)
+        request.addOption("--fragment-retries", fragmentRetries.ifEmpty { ratePolicy.fragmentRetries })
+        request.addOption("--retry-sleep", ratePolicy.retrySleepFragment)
+        if (ratePolicy.ytdlpSleepRequestsSec.isNotEmpty() && !request.toString().contains("--sleep-requests")) {
+            request.addOption("--sleep-requests", ratePolicy.ytdlpSleepRequestsSec)
+        }
 
         val limitRate = sharedPreferences.getString("limit_rate", "")!!
         if (limitRate.isNotBlank()) request.addOption("-r", limitRate)
@@ -1118,16 +1141,22 @@ class YTDLPUtil(private val context: Context, private val commandTemplateDao: Co
             request.addOption("--no-resize-buffer")
         }
 
-        val socketTimeout = sharedPreferences.getString("socket_timeout", "")!!
-        if (socketTimeout.isNotBlank()) {
-            request.addOption("--socket-timeout", socketTimeout)
-        }
+        val socketTimeout = sharedPreferences.getString("socket_timeout", "")!!.ifEmpty { "20" }
+        request.addOption("--socket-timeout", socketTimeout)
 
         if (sharedPreferences.getBoolean("restrict_filenames", true)) request.addOption("--restrict-filenames")
         if (sharedPreferences.getBoolean("force_ipv4", false)){
             request.addOption("-4")
         }
-        if (sharedPreferences.getBoolean("use_cookies", false)){
+        val sessionCtx = SiteSessionManager.prepareSessionContextForUrl(context, downloadItem.url)
+        val domainCookieFile = sessionCtx?.cookieFile
+        if (sessionCtx != null) {
+            request.addOption("--cookies", sessionCtx.cookieFile.absolutePath)
+            if (sessionCtx.userAgent.isNotBlank() && !request.toString().contains("--user-agent")) {
+                request.addOption("--user-agent", sessionCtx.userAgent)
+            }
+            request.addOption("--add-header", "Accept-Language:${Locale.getDefault().toLanguageTag()},en;q=0.9")
+        } else if (sharedPreferences.getBoolean("use_cookies", false)){
             FileUtil.getCookieFile(context){
                 request.addOption("--cookies", it)
             }
@@ -1245,8 +1274,10 @@ class YTDLPUtil(private val context: Context, private val commandTemplateDao: Co
             if (canUseWriteInfoJson && downloadItem.playlistURL.isNullOrBlank()) {
                 val infoJsonURL = downloadItem.url
                 val infoJsonFile = getInfoJsonFile(infoJsonURL)
-                //ignore info file if its older than 5 hours. puny measure to prevent expired formats in some cases
-                if (infoJsonFile != null && System.currentTimeMillis() - infoJsonFile.lastModified() <= (1000 * 60 * 60 * 5)) {
+                val invalidatedByCookies = domainCookieFile != null && infoJsonFile != null &&
+                    domainCookieFile.lastModified() > infoJsonFile.lastModified()
+                //ignore info file if its older than 5 hours or older than fresh domain cookies
+                if (infoJsonFile != null && !invalidatedByCookies && System.currentTimeMillis() - infoJsonFile.lastModified() <= (1000 * 60 * 60 * 5)) {
                     request.addOption("--load-info-json", infoJsonFile.absolutePath)
                 }else {
                     ytDlRequest.addWriteInfoJson(infoJsonURL)
@@ -1279,7 +1310,7 @@ class YTDLPUtil(private val context: Context, private val commandTemplateDao: Co
                 var abrSort = ""
 
                 var audioQualityId : String = downloadItem.format.format_id
-                if (audioQualityId.isBlank() || listOf("0", context.getString(R.string.best_quality), "ba", "best", "", context.getString(
+                if (audioQualityId.isBlank() || audioQualityId.startsWith("fb_") || listOf("0", context.getString(R.string.best_quality), "ba", "best", "", context.getString(
                         R.string.worst_quality), "wa", "worst").contains(audioQualityId)){
                     audioQualityId = "ba/b"
                 }else if(audioQualityId.contains("kbps_ytdlnisgeneric")){
@@ -1558,7 +1589,8 @@ class YTDLPUtil(private val context: Context, private val commandTemplateDao: Co
                 }
 
                 val defaultFormats = context.resources.getStringArray(R.array.video_formats_values)
-                val usingGenericFormat = defaultFormats.contains(videoF) || downloadItem.allFormats.isEmpty() || downloadItem.allFormats == formatUtil.getGenericVideoFormats(context.resources)
+                val isSyntheticFallbackFormat = videoF.startsWith("fb_")
+                val usingGenericFormat = isSyntheticFallbackFormat || defaultFormats.contains(videoF) || downloadItem.allFormats.isEmpty() || downloadItem.allFormats == formatUtil.getGenericVideoFormats(context.resources)
                 var hasGenericResulutionFormat = ""
                 if (!usingGenericFormat){
                     // with audio removed
@@ -1587,7 +1619,13 @@ class YTDLPUtil(private val context: Context, private val commandTemplateDao: Co
                         }
                     }
                 }else{
-                    if (videoF == context.resources.getString(R.string.best_quality) || videoF == "best" || videoF == context.resources.getString(
+                    if (isSyntheticFallbackFormat) {
+                        hasGenericResulutionFormat = downloadItem.format.height
+                            ?.takeIf { it > 0 }
+                            ?.toString()
+                            ?: ""
+                        videoF = "bv"
+                    } else if (videoF == context.resources.getString(R.string.best_quality) || videoF == "best" || videoF == context.resources.getString(
                             R.string.worst_quality) || videoF == "worst") {
                         videoF = "bv"
                     }else if (defaultFormats.contains(videoF)) {

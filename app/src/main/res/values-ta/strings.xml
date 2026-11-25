@@ -585,7 +585,7 @@
         <item quantity="one">ஒவ்வொரு நிமிடமும்</item>
         <item quantity="other">ஒவ்வொரு %d நிமிடங்களுக்கும்</item>
     </plurals>
-    <string name="bgutils_info">yt-dlp க்கான ஒரு மூல ஆதார டோக்கன் (POT) வழங்கி.\nஇது இயக்கப்பட்டதும், POT ஐ உருவாக்கும் HTTP சேவையகத்தை YTDLnis இயக்கும் மற்றும் yt-dlp பயன்படுத்தும் தொடர்புடைய செருகுநிரலை நிறுவும்.</string>
+    <string name="bgutils_info">yt-dlp க்கான ஒரு மூல ஆதார டோக்கன் (POT) வழங்கி.\nஇது இயக்கப்பட்டதும், POT ஐ உருவாக்கும் HTTP சேவையகத்தை YTDL Pro இயக்கும் மற்றும் yt-dlp பயன்படுத்தும் தொடர்புடைய செருகுநிரலை நிறுவும்.</string>
     <string name="bgutils_pot_generation_script">உருவாக்கும் ஸ்கிரிப்ட்</string>
     <string name="bgutils_pot_generation_server">HTTP சேவையகம்</string>
     <string name="bgutils_pot_generation_script_summary">ஒவ்வொரு yt-dlp அழைப்பும் ஸ்கிரிப்டை இயக்க ஒரு புதிய js இயக்க நேர செயல்முறையை உருவாக்குகிறது. ஒரே நேரத்தில் அதிக பயன்பாடு உள்ள சூழலுக்கு இந்த முறை பரிந்துரைக்கப்படவில்லை.</string>
@@ -598,7 +598,7 @@
     <string name="notset">அமைக்கப்படவில்லை</string>
     <string name="external">வெளிப்புறம்</string>
     <string name="exit">வெளியேறுக</string>
-    <string name="packages_description">தொகுப்புகள் என்பது yt-dlp கட்டளைகளுக்கு உதவ YTDLnis பயன்படுத்தும் துணைப் பயன்பாடுகளாகும். அவற்றில் சில ஏற்கெனவே சேர்க்கப்பட்டுள்ளன, ஆனால் செயலியைப் புதுப்பிக்காமலேயே வெளியிடப்படும் புதிய பதிப்புகளை நீங்கள் நிறுவலாம். நிறுவப்பட்ட apk கள் செயலி பயன்படுத்தும் பதிப்பை மாற்றியமைக்கும்.</string>
+    <string name="packages_description">தொகுப்புகள் என்பது yt-dlp கட்டளைகளுக்கு உதவ YTDL Pro பயன்படுத்தும் துணைப் பயன்பாடுகளாகும். அவற்றில் சில ஏற்கெனவே சேர்க்கப்பட்டுள்ளன, ஆனால் செயலியைப் புதுப்பிக்காமலேயே வெளியிடப்படும் புதிய பதிப்புகளை நீங்கள் நிறுவலாம். நிறுவப்பட்ட apk கள் செயலி பயன்படுத்தும் பதிப்பை மாற்றியமைக்கும்.</string>
     <string name="bgutils_pot_generation_script_info">BgUtils POT வழங்கியைப் பயன்படுத்த, செயலி GitHub இலிருந்து Brainicism/bgutil-ytdlp-pot-provider களஞ்சியத்தைப் பதிவிறக்கி நிறுவலைத் தொடங்க வேண்டும். இது முடிவடைய சிறிது நேரம் ஆகலாம். இப்போது தொடரவா?</string>
     <string name="burn_subs">வசனங்களை இணைத்து விடுக</string>
     <string name="check_clipboard_home_summary">முகப்புத் திரையில் எடுத்துவைத்தவற்றில் உள்ள பிணைப்புகளைத் தானாகவே கண்டறியும்</string>
@@ -668,7 +668,7 @@
     <string name="download_anyway">இருப்பினும் பதிவிறக்குக</string>
     <string name="write_ytdlp_terminal">முனையத்தில் yt-dlp எனத் தானாக எழுதுக</string>
     <string name="clear">துடைத்திடுக</string>
-    <string name="welcome_title">YTDLnis இற்கு நல்வரவு</string>
+    <string name="welcome_title">YTDL Pro இற்கு நல்வரவு</string>
     <string name="welcome_subtitle">yt-dlp ஐப் பயன்படுத்திக் காணொளி மற்றும் ஒலியைப் பதிவிறக்குக. முதலில் சிலவற்றை அமைப்போம்.</string>
     <string name="welcome_get_started">தொடங்குக</string>
     <string name="welcome_restore_backup">மீட்கச்சேமிப்பில் இருந்து மீட்டமைக்கவும்</string>
@@ -678,7 +678,7 @@
     <string name="welcome_guide_summary">வழிகாட்டி செயலி, பதிவிறக்கம், கட்டளைக் கட்டமைப்புகள் மற்றும் பொதுவான சிக்கல்களைத் தீர்ப்பது பற்றிய அனைத்தையும் கொண்டுள்ளது. வலைத்தளத்திலிருந்து எப்போது வேண்டுமானாலும் இதைத் திறக்கலாம்.</string>
     <string name="welcome_open_guide">வழிகாட்டியைத் திறந்திடுக</string>
     <string name="welcome_permissions_title">அனுமதிகள்</string>
-    <string name="welcome_permissions_summary">இவற்றோடு YTDLnis சிறப்பாகச் செயல்படும். பின்னர் அமைப்புகளில் இவற்றை மாற்றிக்கொள்ளலாம்.</string>
+    <string name="welcome_permissions_summary">இவற்றோடு YTDL Pro சிறப்பாகச் செயல்படும். பின்னர் அமைப்புகளில் இவற்றை மாற்றிக்கொள்ளலாம்.</string>
     <string name="welcome_perm_storage">சேமிப்பக அணுகல்</string>
     <string name="welcome_perm_storage_summary">உங்கள் பதிவிறக்கங்களைச் சாதனத்தில் சேமிக்கத் தேவைப்படுகிறது.</string>
     <string name="welcome_perm_notifications">அறிவிப்புகள்</string>
@@ -693,7 +693,7 @@
     <string name="welcome_perm_folders_header">மீட்டமைக்கப்பட்ட கோப்புறைகள்</string>
     <string name="welcome_perm_folders_summary">உங்கள் மீட்கச்சேமிப்பு இந்தக் கோப்புறைகளைப் பயன்படுத்துகிறது, ஆனால் செயலிக்கான அணுகல் இல்லை. ஒவ்வொன்றையும் மீண்டும் அனுமதிக்கவும் அல்லது வேறு கோப்புறையைத் தேர்ந்தெடுக்கவும்.</string>
     <string name="welcome_updates_title">புதுப்பிப்புகள்</string>
-    <string name="welcome_updates_summary">YTDLnis எவ்வாறு புதுப்பித்த நிலையில் இருக்க வேண்டும் என்பதைத் தேர்ந்தெடுக்கவும்.</string>
+    <string name="welcome_updates_summary">YTDL Pro எவ்வாறு புதுப்பித்த நிலையில் இருக்க வேண்டும் என்பதைத் தேர்ந்தெடுக்கவும்.</string>
     <string name="welcome_next">அடுத்து</string>
     <string name="welcome_finish">முடிக்கவும்</string>
     <string name="lyrics">பாடல் வரிகள்</string>

@@ -165,19 +165,22 @@ object ThemeUtil {
     fun getStyledAppName(context: Context): Spanned {
         val colorPrimary = getThemeColor(context, androidx.appcompat.R.attr.colorPrimaryDark)
         val hexColor = "#%06X".format(0xFFFFFF and colorPrimary)
-        return "<span  style='color:$hexColor';>YTDL</span>nis"
+        return "<span  style='color:$hexColor';>YTDL</span> Pro"
             .parseAsHtml(HtmlCompat.FROM_HTML_MODE_COMPACT)
     }
 
 
+    private const val COMPONENT_NAMESPACE = "com.deniscerri.ytdl"
+
     fun updateAppIcon(activity: Activity, theme: String, appIconMode: String) {
+        val pkg = activity.packageName
         //disable old icons
         for (appIcon in availableIcons) {
-            val activityClass = "com.deniscerri.ytdl." + appIcon.activityAlias
+            val activityClass = "$COMPONENT_NAMESPACE." + appIcon.activityAlias
 
             // remove old icons
             activity.packageManager.setComponentEnabledSetting(
-                ComponentName(activity.packageName, activityClass),
+                ComponentName(pkg, activityClass),
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                 PackageManager.DONT_KILL_APP
             )
@@ -191,28 +194,28 @@ object ThemeUtil {
         when (iconMode) {
             "LightIcon" -> {
                 activity.packageManager.setComponentEnabledSetting(
-                    ComponentName(activity.packageName, "com.deniscerri.ytdl.LightIcon"),
+                    ComponentName(pkg, "$COMPONENT_NAMESPACE.LightIcon"),
                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                     PackageManager.DONT_KILL_APP
                 )
             }
             "DarkIcon" -> {
                 activity.packageManager.setComponentEnabledSetting(
-                    ComponentName(activity.packageName, "com.deniscerri.ytdl.DarkIcon"),
+                    ComponentName(pkg, "$COMPONENT_NAMESPACE.DarkIcon"),
                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                     PackageManager.DONT_KILL_APP
                 )
             }
             "BlueIcon" -> {
                 activity.packageManager.setComponentEnabledSetting(
-                    ComponentName(activity.packageName, "com.deniscerri.ytdl.BlueIcon"),
+                    ComponentName(pkg, "$COMPONENT_NAMESPACE.BlueIcon"),
                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                     PackageManager.DONT_KILL_APP
                 )
             }
             "GreenIcon" -> {
                 activity.packageManager.setComponentEnabledSetting(
-                    ComponentName(activity.packageName, "com.deniscerri.ytdl.GreenIcon"),
+                    ComponentName(pkg, "$COMPONENT_NAMESPACE.GreenIcon"),
                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                     PackageManager.DONT_KILL_APP
                 )
@@ -221,7 +224,7 @@ object ThemeUtil {
             else -> {
                 //set dynamic icon
                 activity.packageManager.setComponentEnabledSetting(
-                    ComponentName(activity.packageName, "com.deniscerri.ytdl.Default"),
+                    ComponentName(pkg, "$COMPONENT_NAMESPACE.Default"),
                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                     PackageManager.DONT_KILL_APP
                 )

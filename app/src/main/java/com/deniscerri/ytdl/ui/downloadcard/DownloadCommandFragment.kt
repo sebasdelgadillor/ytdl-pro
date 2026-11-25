@@ -320,6 +320,9 @@ class DownloadCommandFragment(private val resultItem: ResultItem? = null, privat
         ))
     }
 
+    fun getDownloadItemOrNull(): DownloadItem? =
+        if (::downloadItem.isInitialized) downloadItem else null
+
     override fun updateTitleAuthor(t: String, a: String) {
         downloadItem.title = t
         downloadItem.author = a

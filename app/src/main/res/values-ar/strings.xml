@@ -605,7 +605,7 @@
         <item quantity="many">كل %d دقيقة</item>
         <item quantity="other">كل %d دقيقة</item>
     </plurals>
-    <string name="bgutils_info">مزوّد رمز إثبات المصدر (POT) لأداة yt-dlp.\nعند تفعيله، يقوم YTDLnis باستضافة خادم HTTP الذي يولّد رمز POT، ويثبّت الإضافة المرتبطة التي تستخدمها yt-dlp.</string>
+    <string name="bgutils_info">مزوّد رمز إثبات المصدر (POT) لأداة yt-dlp.\nعند تفعيله، يقوم YTDL Pro باستضافة خادم HTTP الذي يولّد رمز POT، ويثبّت الإضافة المرتبطة التي تستخدمها yt-dlp.</string>
     <string name="bgutils_pot_generation_script">سكربت التوليد</string>
     <string name="bgutils_pot_generation_server">خادم HTTP</string>
     <string name="bgutils_pot_generation_script_summary">كل استدعاء لـ yt-dlp يتحمّل عبء إنشاء عملية جديدة لبيئة تشغيل JavaScript لتنفيذ السكربت. لا يُنصح باستخدام هذه الطريقة في حالات الاستخدام العالي التزامن.</string>
@@ -621,7 +621,7 @@
     <string name="check_clipboard_home_summary">كشف تلقائيا للرابط في الحافظة في الشاشة الرئيسية</string>
     <string name="check_clipboard_home">تحقق من الحافظة في الشاشة الرئيسية</string>
     <string name="notset">غير محدد</string>
-    <string name="packages_description">الحزم هي تطبيقات مساعدة يستخدمها YTDLnis لدعم أوامر yt-dlp. تأتي بعض هذه الحزم مدمجة بالفعل مع التطبيق، ولكن يمكنك تثبيت إصدارات أحدث يتم إصدارها دون الحاجة إلى تحديث التطبيق نفسه؛ حيث تحل ملفات APK المثبتة هذه محل الإصدار المدمج الذي يستخدمه التطبيق.</string>
+    <string name="packages_description">الحزم هي تطبيقات مساعدة يستخدمها YTDL Pro لدعم أوامر yt-dlp. تأتي بعض هذه الحزم مدمجة بالفعل مع التطبيق، ولكن يمكنك تثبيت إصدارات أحدث يتم إصدارها دون الحاجة إلى تحديث التطبيق نفسه؛ حيث تحل ملفات APK المثبتة هذه محل الإصدار المدمج الذي يستخدمه التطبيق.</string>
     <string name="bgutils_pot_generation_script_info">لاستخدام مزود BgUtils POT، يحتاج التطبيق إلى تحميل المستودع Brainicism/bgutil-ytdlp-pot-provider من GitHub وبدء عملية التثبيت. قد تستغرق هذه العملية بعض الوقت؛ هل تود المتابعة الآن؟</string>
     <string name="search_results">نتائج البحث</string>
     <string name="clear_info_json">مسح ملفات infojson</string>
@@ -735,7 +735,7 @@
     <string name="retry_all">إعادة محاولة الكل</string>
     <string name="download_anyway">تنزيل بأي حال</string>
     <string name="clear">مسح</string>
-    <string name="welcome_title">مرحبا بك في YTDLnis</string>
+    <string name="welcome_title">مرحبا بك في YTDL Pro</string>
     <string name="welcome_get_started">ابدأ</string>
     <string name="welcome_restore_backup">استعادة من نسخة احتياطية</string>
     <string name="welcome_restore_failed">لم يتمكن من استعادة هذه النسخة</string>
@@ -744,7 +744,7 @@
     <string name="welcome_guide_summary">يُغطي هذا الدليل كل ما يتعلق بالتطبيق، من التنزيل إلى قوالب الأوامر وحل المشاكل الشائعة. يمكنك فتحه في أي وقت من الموقع الإلكتروني.</string>
     <string name="welcome_open_guide">فتح التعليمات</string>
     <string name="welcome_permissions_title">الأذونات</string>
-    <string name="welcome_permissions_summary">يعمل برنامج YTDLnis بشكل أفضل مع هذه الإعدادات. يمكنك تغييرها لاحقًا في الإعدادات.</string>
+    <string name="welcome_permissions_summary">يعمل برنامج YTDL Pro بشكل أفضل مع هذه الإعدادات. يمكنك تغييرها لاحقًا في الإعدادات.</string>
     <string name="welcome_perm_storage">الوصول للتخزين</string>
     <string name="welcome_perm_storage_summary">مطلوب لحفظ التنزيلات في الجهاز.</string>
     <string name="welcome_perm_notifications">الإشعارات</string>
@@ -757,7 +757,7 @@
     <string name="welcome_required">مطلوب</string>
     <string name="welcome_perm_folders_summary">تستخدم النسخة الاحتياطية هذه المجلدات، لكن التطبيق فقد الوصول إليها. امنح كل مجلد منها إذن الوصول مجدداً، أو اختر مجلداً مختلفاً لاستخدامه بدلاً منها.</string>
     <string name="welcome_updates_title">التحديثات</string>
-    <string name="welcome_updates_summary">اختر كيف يكون YTDLnis بآخر تحديث.</string>
+    <string name="welcome_updates_summary">اختر كيف يكون YTDL Pro بآخر تحديث.</string>
     <string name="background">الخلفية</string>
     <string name="background_update_check">التحقق من التحديثات في الخلفية</string>
     <string name="background_update_check_summary">يشتغل مرة واحدة تقريبًا يوميًا أثناء الاتصال بالإنترنت، حتى عند إغلاق التطبيق</string>

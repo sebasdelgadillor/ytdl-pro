@@ -1,6 +1,7 @@
 package com.deniscerri.ytdl.util.extractors.newpipe
 
 import com.deniscerri.ytdl.App
+import com.deniscerri.ytdl.util.SiteSessionManager
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody
@@ -47,7 +48,15 @@ class NewPipeDownloaderImpl(builder: OkHttpClient.Builder) : Downloader() {
         // Applied after the extractor headers so they can't overwrite the cookies
         val host = request.url().toHttpUrlOrNull()?.host.orEmpty()
         if (host == "youtube.com" || host.endsWith(".youtube.com")) {
-            val cookies = getCookies()
+            val cookies = LinkedHashMap<String, String>()
+            cookies.putAll(getCookies())
+            runCatching {
+                SiteSessionManager.extractLiveCookiesForDomain(App.instance, "youtube.com")
+            }.getOrDefault(emptyList()).forEach { c ->
+                if (c.name.isNotBlank() && c.value.isNotEmpty()) {
+                    cookies[c.name] = c.value
+                }
+            }
             if (cookies.isNotEmpty()) {
                 val existing = headers.entries
                     .firstOrNull { it.key.equals("Cookie", true) }?.value.orEmpty()
@@ -68,6 +77,28 @@ class NewPipeDownloaderImpl(builder: OkHttpClient.Builder) : Downloader() {
                     requestBuilder.header("X-Goog-AuthUser", "0")
                     requestBuilder.header("X-Origin", origin)
                     requestBuilder.header("Origin", origin)
+                }
+            }
+        } else if (host.isNotBlank()) {
+            val liveCookieHeader = runCatching {
+                SiteSessionManager.getCookieHeaderForUrl(url)
+            }.getOrNull()
+            if (!liveCookieHeader.isNullOrBlank()) {
+                val cookieMap = LinkedHashMap<String, String>()
+                headers.entries
+                    .firstOrNull { it.key.equals("Cookie", true) }?.value.orEmpty()
+                    .flatMap { it.split(";") }
+                    .map { it.trim() }
+                    .forEach { pair ->
+                        val eq = pair.indexOf('=')
+                        if (eq > 0) cookieMap[pair.substring(0, eq).trim()] = pair.substring(eq + 1).trim()
+                    }
+                liveCookieHeader.split(";").map { it.trim() }.forEach { pair ->
+                    val eq = pair.indexOf('=')
+                    if (eq > 0) cookieMap[pair.substring(0, eq).trim()] = pair.substring(eq + 1).trim()
+                }
+                if (cookieMap.isNotEmpty()) {
+                    requestBuilder.header("Cookie", cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" })
                 }
             }
         }

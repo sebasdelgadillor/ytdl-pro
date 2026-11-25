@@ -22,7 +22,18 @@
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
                 android:background="@drawable/ic_app_icon"
+                android:contentDescription="@null"
+                android:importantForAccessibility="no"
                 android:scaleType="center" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:layout_marginBottom="8dp"
+                android:alpha="0.75"
+                android:text="@string/about_fork_subtitle"
+                android:textSize="12sp" />
 
             <TextView
                 android:id="@+id/terminal"
@@ -166,6 +177,21 @@
                 android:background="?android:attr/selectableItemBackground"
                 android:paddingHorizontal="15dp"
                 app:drawableStartCompat="@drawable/ic_settings" />
+
+            <TextView
+                android:id="@+id/about_fork"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:drawablePadding="35dp"
+                android:textSize="16sp"
+                android:paddingVertical="15dp"
+                android:text="@string/about_fork_title"
+                android:textStyle="bold"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground"
+                android:paddingHorizontal="15dp"
+                app:drawableStartCompat="@drawable/ic_info" />
 
         </LinearLayout>
 

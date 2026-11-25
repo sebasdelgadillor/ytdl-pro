@@ -465,6 +465,10 @@ object FileUtil {
         return "${getDefaultApplicationPath()}/Command"
     }
 
+    fun getDefaultImagePath() : String {
+        return "${getDefaultApplicationPath()}/Images"
+    }
+
     fun getDefaultApksPath() : String {
         return "${getDefaultApplicationPath()}/Apks"
     }

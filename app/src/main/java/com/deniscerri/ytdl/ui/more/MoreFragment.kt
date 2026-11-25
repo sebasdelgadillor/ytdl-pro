@@ -42,6 +42,7 @@ class MoreFragment : Fragment() {
     private lateinit var observeSources: TextView
     private lateinit var terminateApp: TextView
     private lateinit var settings: TextView
+    private lateinit var aboutFork: TextView
     private lateinit var mainActivity: MainActivity
     private lateinit var downloadViewModel: DownloadViewModel
     override fun onCreateView(
@@ -67,6 +68,7 @@ class MoreFragment : Fragment() {
         observeSources = view.findViewById(R.id.observe_sources)
         terminateApp = view.findViewById(R.id.terminate)
         settings = view.findViewById(R.id.settings)
+        aboutFork = view.findViewById(R.id.about_fork)
 
         val appIcon = view.findViewById<ImageView>(R.id.app_icon)
         if (mainSharedPreferences.getString("theme_accent", "blue") == "Default" && Build.VERSION.SDK_INT >= 32) {
@@ -89,7 +91,7 @@ class MoreFragment : Fragment() {
         downloads.isVisible = !showingDownloads
         downloadQueue.isVisible = !showingDownloadQueue
         GroupedListUtil.applyToViews(listOf(terminal, logs, commandTemplates, downloads, downloadQueue, cookies, observeSources, terminateApp))
-        GroupedListUtil.applyToViews(listOf(settings))
+        GroupedListUtil.applyToViews(listOf(settings, aboutFork))
 
         terminal.setOnClickListener {
             val intent = Intent(context, TerminalActivity::class.java)
@@ -131,6 +133,10 @@ class MoreFragment : Fragment() {
         settings.setOnClickListener {
             val intent = Intent(context, SettingsActivity::class.java)
             startActivity(intent)
+        }
+
+        aboutFork.setOnClickListener {
+            ForkInfoDialog.show(requireContext())
         }
 
     }

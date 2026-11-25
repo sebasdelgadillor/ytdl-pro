@@ -7,92 +7,132 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.deniscerri.ytdl.database.models.DownloadItem
 import com.deniscerri.ytdl.database.models.ResultItem
 
-class DownloadFragmentAdapter (
-    fragmentManager : FragmentManager,
-    lifecycle : Lifecycle,
+class DownloadFragmentAdapter(
+    fragmentManager: FragmentManager,
+    lifecycle: Lifecycle,
     private var result: ResultItem?,
     private var downloadItem: DownloadItem?,
     nonSpecific: Boolean = false,
-    var isIncognito: Boolean = false
+    var isIncognito: Boolean = false,
+    private val useModernMediaTabs: Boolean = false,
+    private val includeCommandTab: Boolean = false
 ) : FragmentStateAdapter(fragmentManager, lifecycle) {
 
-    fun setResultItem(res: ResultItem){
-        result = res
+    val fragments: List<Fragment> = if (useModernMediaTabs) {
+        buildList {
+            add(DownloadVideoFragment(result, downloadItem, "", nonSpecific))
+            add(DownloadAudioFragment(result, downloadItem, "", nonSpecific))
+            add(DownloadImageFragment(result, downloadItem, ""))
+            if (includeCommandTab) {
+                add(DownloadCommandFragment(result, downloadItem))
+            }
+        }
+    } else {
+        listOf(
+            DownloadAudioFragment(result, downloadItem, "", nonSpecific),
+            DownloadVideoFragment(result, downloadItem, "", nonSpecific),
+            DownloadCommandFragment(result, downloadItem)
+        )
+    }
 
-        fragments.forEachIndexed { idx, it ->
-            when(idx) {
-                0 -> kotlin.runCatching { (it as DownloadAudioFragment).updateUI(res) }
-                1 -> kotlin.runCatching { (it as DownloadVideoFragment).updateUI(res) }
-                2 -> kotlin.runCatching { (it as DownloadCommandFragment).updateUI(res) }
+    fun getAudioFragment(): DownloadAudioFragment? =
+        fragments.filterIsInstance<DownloadAudioFragment>().firstOrNull()
+
+    fun getVideoFragment(): DownloadVideoFragment? =
+        fragments.filterIsInstance<DownloadVideoFragment>().firstOrNull()
+
+    fun setResultItem(res: ResultItem) {
+        result = res
+        fragments.forEach { frag ->
+            runCatching {
+                when (frag) {
+                    is DownloadAudioFragment -> frag.updateUI(res)
+                    is DownloadVideoFragment -> frag.updateUI(res)
+                    is DownloadImageFragment -> frag.updateUI(res)
+                    is DownloadCommandFragment -> frag.updateUI(res)
+                }
             }
         }
     }
 
-    private fun setTitleAuthor(t: String, a: String){
+    private fun setTitleAuthor(t: String, a: String) {
         result?.title = t
         result?.author = a
         downloadItem?.title = t
         downloadItem?.author = a
     }
 
+    override fun getItemCount(): Int = fragments.size
 
-    val fragments = listOf<Fragment>(
-        DownloadAudioFragment(result, downloadItem,"", nonSpecific),
-        DownloadVideoFragment(result, downloadItem,"", nonSpecific),
-        DownloadCommandFragment(result, downloadItem)
-    )
+    override fun createFragment(position: Int): Fragment = fragments[position]
 
-    override fun getItemCount(): Int {
-        return fragments.size
-    }
+    fun updateWhenSwitching(currentViewPagerItem: Int) {
+        val currentFrag = fragments.getOrNull(currentViewPagerItem) ?: return
 
+        val prevPair = fragments.firstNotNullOfOrNull { frag ->
+            if (frag === currentFrag) return@firstNotNullOfOrNull null
+            runCatching {
+                when (frag) {
+                    is DownloadAudioFragment -> frag.downloadItem.title to frag.downloadItem.author
+                    is DownloadVideoFragment -> frag.downloadItem.title to frag.downloadItem.author
+                    is DownloadImageFragment -> frag.downloadItem.title to frag.downloadItem.author
+                    is DownloadCommandFragment -> frag.downloadItem.title to frag.downloadItem.author
+                    else -> null
+                }
+            }.getOrNull()
+        }
 
-    override fun createFragment(position: Int): Fragment {
-        return fragments[position]
-    }
+        if (prevPair != null) {
+            setTitleAuthor(prevPair.first, prevPair.second)
+        }
 
-    fun updateWhenSwitching(currentViewPagerItem : Int) {
-        val prevDownloadItem = getDownloadItem(
-            if (currentViewPagerItem == 1) 0 else 1
-        )
-        setTitleAuthor(prevDownloadItem.title, prevDownloadItem.author)
-
-        when(currentViewPagerItem){
-            0 -> {
-                kotlin.runCatching {
-                    (fragments[0] as DownloadAudioFragment).apply {
-                        updateTitleAuthor(prevDownloadItem.title, prevDownloadItem.author)
-                        updateSelectedAudioFormat(getDownloadItem(1).videoPreferences.audioFormatIDs.first())
-                    }
+        when (currentFrag) {
+            is DownloadAudioFragment -> runCatching {
+                if (prevPair != null) {
+                    currentFrag.updateTitleAuthor(prevPair.first, prevPair.second)
+                }
+                val videoItem = getVideoFragment()?.downloadItem
+                val audioId = videoItem?.videoPreferences?.audioFormatIDs?.firstOrNull()
+                if (!audioId.isNullOrBlank()) {
+                    currentFrag.updateSelectedAudioFormat(audioId)
                 }
             }
-            1 -> {
-                kotlin.runCatching {
-                    (fragments[1] as DownloadVideoFragment).apply {
-                        updateTitleAuthor(prevDownloadItem.title, prevDownloadItem.author)
-                        updateSelectedAudioFormat(getDownloadItem(0).format)
-                    }
+            is DownloadVideoFragment -> runCatching {
+                if (prevPair != null) {
+                    currentFrag.updateTitleAuthor(prevPair.first, prevPair.second)
+                }
+                getAudioFragment()?.downloadItem?.format?.let { audioFormat ->
+                    currentFrag.updateSelectedAudioFormat(audioFormat)
                 }
             }
-            2 -> {
-                kotlin.runCatching {
-                    (fragments[2] as DownloadCommandFragment).apply {
-                        updateTitleAuthor(prevDownloadItem.title, prevDownloadItem.author)
-                    }
+            is DownloadImageFragment -> runCatching {
+                if (prevPair != null) {
+                    currentFrag.updateTitleAuthor(prevPair.first, prevPair.second)
                 }
             }
-            else -> {}
+            is DownloadCommandFragment -> runCatching {
+                if (prevPair != null) {
+                    currentFrag.updateTitleAuthor(prevPair.first, prevPair.second)
+                }
+            }
         }
     }
 
-    fun getDownloadItem(position: Int) : DownloadItem {
-        return when(position) {
-            0 -> (fragments[0] as DownloadAudioFragment).downloadItem
-            1 -> (fragments[1] as DownloadVideoFragment).downloadItem
-            else -> (fragments[2] as DownloadCommandFragment).downloadItem
-        }.apply {
+    fun getDownloadItemOrNull(position: Int): DownloadItem? {
+        val frag = fragments.getOrNull(position)
+        val item = when (frag) {
+            is DownloadAudioFragment -> frag.getDownloadItemOrNull()
+            is DownloadVideoFragment -> frag.getDownloadItemOrNull()
+            is DownloadImageFragment -> frag.getDownloadItemOrNull()
+            is DownloadCommandFragment -> frag.getDownloadItemOrNull()
+            else -> null
+        } ?: downloadItem
+        return item?.apply {
             incognito = isIncognito
         }
     }
 
+    fun getDownloadItem(position: Int): DownloadItem {
+        return getDownloadItemOrNull(position) ?: downloadItem!!
+    }
 }

@@ -29,6 +29,8 @@ import android.view.View.VISIBLE
 import android.view.ViewGroup
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
@@ -59,9 +61,12 @@ import com.deniscerri.ytdl.database.viewmodel.DownloadCardViewModel
 import com.deniscerri.ytdl.database.viewmodel.DownloadViewModel
 import com.deniscerri.ytdl.database.viewmodel.HistoryViewModel
 import com.deniscerri.ytdl.database.viewmodel.ResultViewModel
+import com.deniscerri.ytdl.database.viewmodel.SiteSessionViewModel
 import com.deniscerri.ytdl.ui.adapter.HomeAdapter
 import com.deniscerri.ytdl.ui.adapter.SearchSuggestionsAdapter
+import com.deniscerri.ytdl.ui.adapter.SiteSessionGridAdapter
 import com.deniscerri.ytdl.ui.more.cookies.WebViewActivity
+import com.deniscerri.ytdl.util.BrowserMediaUtil
 import com.deniscerri.ytdl.util.DragSelectTouchListener
 import com.deniscerri.ytdl.util.Extensions.enableFastScroll
 import com.deniscerri.ytdl.util.Extensions.isURL
@@ -69,6 +74,7 @@ import com.deniscerri.ytdl.util.NotificationUtil
 import com.deniscerri.ytdl.util.ThemeUtil
 import com.deniscerri.ytdl.core.RuntimeManager
 import com.deniscerri.ytdl.util.UiUtil
+import com.deniscerri.ytdl.util.rules.WebRulesRegistry
 import com.facebook.shimmer.ShimmerFrameLayout
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
@@ -120,6 +126,13 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
     private lateinit var downloadViewModel : DownloadViewModel
     private lateinit var historyViewModel : HistoryViewModel
     private lateinit var downloadCardViewModel : DownloadCardViewModel
+    private lateinit var siteSessionViewModel: SiteSessionViewModel
+    private lateinit var siteSessionAdapter: SiteSessionGridAdapter
+    private var recyclerViewPlatforms: RecyclerView? = null
+    private var platformsCountPill: TextView? = null
+    private var platformsEmptyContainer: LinearLayout? = null
+    private var platformsEmptyChips: ChipGroup? = null
+    private var openBrowserBtn: MaterialButton? = null
 
     private var fragmentView: View? = null
     private var activity: Activity? = null
@@ -142,6 +155,7 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
     private var materialToolbar: MaterialToolbar? = null
     private var loadingItems: Boolean = false
     private var queryList = mutableListOf<String>()
+    private var lastSingleUrlQuery: String? = null
 
     private var showDownloadAllFab: Boolean = false
     private var showClipboardFab: Boolean = false
@@ -168,6 +182,7 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
         downloadViewModel = ViewModelProvider(requireActivity())[DownloadViewModel::class.java]
         historyViewModel = ViewModelProvider(this)[HistoryViewModel::class.java]
         downloadCardViewModel = ViewModelProvider(requireActivity())[DownloadCardViewModel::class.java]
+        siteSessionViewModel = ViewModelProvider(requireActivity())[SiteSessionViewModel::class.java]
 
         downloadQueue = ArrayList()
 
@@ -186,6 +201,13 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
         clipboardFab = homeFabs!!.findViewById(R.id.copied_url_fab)
         playlistNameFilterScrollView = view.findViewById(R.id.playlist_selection_chips_scrollview)
         playlistNameFilterChipGroup = view.findViewById(R.id.playlist_selection_chips)
+        recyclerViewPlatforms = view.findViewById(R.id.recyclerViewPlatforms)
+        platformsCountPill = view.findViewById(R.id.platforms_count_pill)
+        platformsEmptyContainer = view.findViewById(R.id.platforms_empty_container)
+        platformsEmptyChips = view.findViewById(R.id.platforms_empty_chips)
+        openBrowserBtn = view.findViewById(R.id.open_browser_btn)
+
+        setupAuthenticatedPlatformsSection()
 
         runCatching { materialToolbar!!.title = ThemeUtil.getStyledAppName(requireContext()) }
 
@@ -239,9 +261,10 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
                 }else if (resultViewModel.repository.itemCount.value == 1){
                     if (sharedPreferences!!.getBoolean("download_card", true)){
                         if(size == 1 && quickLaunchSheet && parentFragmentManager.findFragmentByTag("downloadSingleSheet") == null){
+                            val item = firstResult!!
                             showSingleDownloadSheet(
-                                firstResult!!,
-                                DownloadType.valueOf(sharedPreferences!!.getString("preferred_download_type", "video")!!)
+                                item,
+                                downloadViewModel.resolveDownloadTypeForResult(item)
                             )
                         }
                     }
@@ -290,10 +313,13 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
         }
 
         if (inputQueries != null) {
+            val pendingQueries = inputQueries!!.toList()
+            lastSingleUrlQuery = pendingQueries.singleOrNull()
+                ?.takeIf { Patterns.WEB_URL.matcher(it).matches() }
+            inputQueries = null
             lifecycleScope.launch(Dispatchers.IO){
                 resultViewModel.deleteAll()
-                resultViewModel.parseQueries(inputQueries!!){}
-                inputQueries = null
+                resultViewModel.parseQueries(pendingQueries){}
             }
         }
 
@@ -319,25 +345,39 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
             launch{
                 resultViewModel.uiState.collectLatest { res ->
                     if (res.errorMessage != null){
-                        val isSingleQueryAndURL = queryList.size == 1 && Patterns.WEB_URL.matcher(queryList.first()).matches()
+                        val singleUrl = queryList.singleOrNull()
+                            ?.takeIf { Patterns.WEB_URL.matcher(it).matches() }
+                            ?: lastSingleUrlQuery?.takeIf { Patterns.WEB_URL.matcher(it).matches() }
+                        lastSingleUrlQuery = null
 
-                        runCatching {
-                            UiUtil.handleNoResults(requireActivity(), res.errorMessage!!,
-                                url = if (isSingleQueryAndURL) queryList.first() else null,
-                                continueAnyway = isSingleQueryAndURL,
-                                continued = {
-                                    resultViewModel.removeFailedQuery(queryList.first())
-                                    onDownloadAnyway(queryList.first())
-                                },
-                                cookieFetch = {
-                                    val myIntent = Intent(requireContext(), WebViewActivity::class.java)
-                                    myIntent.putExtra("url", "https://${URL(queryList.first()).host}")
-                                    cookiesFetchedResultLauncher.launch(myIntent)
-                                },
-                                closed = {}
-                            )
+                        if (singleUrl != null) {
+                            resultViewModel.removeFailedQuery(singleUrl)
+                            if (sharedPreferences?.getBoolean("download_card", true) != false) {
+                                Toast.makeText(
+                                    requireContext(),
+                                    R.string.media_type_uncertain_choose_format,
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                showSingleDownloadSheet(
+                                    resultItem = downloadViewModel.createEmptyResultItem(singleUrl),
+                                    type = downloadViewModel.getDownloadType(null, singleUrl),
+                                    disableUpdateData = true
+                                )
+                            } else {
+                                onDownloadAnyway(singleUrl)
+                            }
+                        } else {
+                            runCatching {
+                                UiUtil.handleNoResults(requireActivity(), res.errorMessage!!,
+                                    url = null,
+                                    continueAnyway = false,
+                                    continued = {},
+                                    cookieFetch = {},
+                                    closed = {}
+                                )
+                            }
                         }
-                        resultViewModel.uiState.update {it.copy(errorMessage  = null) }
+                        resultViewModel.uiState.update { it.copy(errorMessage = null) }
                     }
 
                     loadingItems = res.processing
@@ -757,21 +797,30 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
     }
 
     private fun startSearch() {
+        lastSingleUrlQuery = queryList.singleOrNull()
+            ?.takeIf { Patterns.WEB_URL.matcher(it).matches() }
         lifecycleScope.launch(Dispatchers.IO){
             resultViewModel.deleteAll()
             if(sharedPreferences!!.getBoolean("quick_download", false) || sharedPreferences!!.getString("preferred_download_type", "video") == "command"){
                 if (queryList.size == 1 && Patterns.WEB_URL.matcher(queryList.first()).matches()){
+                    val singleUrl = queryList.first()
+                    val resolvedItem = if (BrowserMediaUtil.isDirectStaticImageFile(singleUrl)) {
+                        BrowserMediaUtil.buildImageOnlyResultItem(singleUrl, singleUrl)
+                    } else {
+                        downloadViewModel.createEmptyResultItem(singleUrl)
+                    }
+                    val resolvedType = downloadViewModel.resolveDownloadTypeForResult(resolvedItem)
                     if (sharedPreferences!!.getBoolean("download_card", true)) {
                         withContext(Dispatchers.Main){
                             showSingleDownloadSheet(
-                                resultItem = downloadViewModel.createEmptyResultItem(queryList.first()),
-                                type = DownloadType.valueOf(sharedPreferences!!.getString("preferred_download_type", "video")!!)
+                                resultItem = resolvedItem,
+                                type = resolvedType
                             )
                         }
                     } else {
                         val downloadItem = downloadViewModel.createDownloadItemFromResult(
-                            result = downloadViewModel.createEmptyResultItem(queryList.first()),
-                            givenType = DownloadType.valueOf(sharedPreferences!!.getString("preferred_download_type", "video")!!)
+                            result = resolvedItem,
+                            givenType = resolvedType
                         )
                         downloadViewModel.queueDownloads(listOf(downloadItem))
                     }
@@ -942,7 +991,13 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
             val bundle = Bundle()
             downloadCardViewModel.setResultItem(resultItem)
             downloadCardViewModel.setDownloadItem(null)
-            bundle.putSerializable("type", downloadViewModel.getDownloadType(type, resultItem.url))
+            val sheetType = if (type == DownloadType.image) {
+                DownloadType.image
+            } else {
+                downloadViewModel.getDownloadType(type, resultItem.url)
+            }
+            bundle.putSerializable("type", sheetType)
+            bundle.putBoolean("allow_dynamic_type_switch", true)
             if (disableUpdateData) {
                 bundle.putBoolean("disableUpdateData", true)
             }
@@ -1076,7 +1131,7 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
                             resultItem?.apply {
                                 showSingleDownloadSheet(
                                     resultItem,
-                                    downloadViewModel.getDownloadType(url = resultItem.url)
+                                    downloadViewModel.resolveDownloadTypeForResult(resultItem)
                                 )
                             }
                         }else{
@@ -1142,6 +1197,125 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, SearchSuggesti
         }.getOrNull()
     }
 
+
+    private fun setupAuthenticatedPlatformsSection() {
+        siteSessionAdapter = SiteSessionGridAdapter(
+            onSiteClick = { session ->
+                (activity as? MainActivity)?.openBrowserWithUrl(session.url)
+            },
+            onSiteLongClick = { session ->
+                val options = arrayOf(
+                    getString(R.string.open_in_browser),
+                    getString(R.string.refresh_session),
+                    getString(R.string.sign_out_remove)
+                )
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(session.displayName)
+                    .setItems(options) { _, which ->
+                        when (which) {
+                            0 -> (activity as? MainActivity)?.openBrowserWithUrl(session.url)
+                            1 -> {
+                                lifecycleScope.launch {
+                                    siteSessionViewModel.refreshSession(session.domain)
+                                    if (isAdded) {
+                                        Toast.makeText(
+                                            requireContext(),
+                                            R.string.session_refreshed,
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }
+                            2 -> {
+                                lifecycleScope.launch {
+                                    siteSessionViewModel.removeSession(
+                                        session.domain,
+                                        clearBrowserCookies = true
+                                    )
+                                    if (isAdded) {
+                                        Toast.makeText(
+                                            requireContext(),
+                                            R.string.session_removed,
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .show()
+            },
+            onAddClick = {
+                (activity as? MainActivity)?.openBrowserWithUrl("")
+            }
+        )
+
+        val defaultColumns = if (resources.getBoolean(R.bool.isTablet)) 6 else 4
+        recyclerViewPlatforms?.layoutManager = GridLayoutManager(requireContext(), defaultColumns)
+        recyclerViewPlatforms?.adapter = siteSessionAdapter
+
+        openBrowserBtn?.setOnClickListener {
+            (activity as? MainActivity)?.openBrowserWithUrl("")
+        }
+
+        val starterPlatforms = WebRulesRegistry.current().quickPlatforms
+            .filter { it.showOnHome }
+            .ifEmpty { WebRulesRegistry.current().quickPlatforms.take(5) }
+        platformsEmptyChips?.removeAllViews()
+        starterPlatforms.forEach { platform ->
+            val chip = Chip(requireContext()).apply {
+                text = platform.name
+                contentDescription = getString(R.string.open_platform_in_browser, platform.name)
+                isCheckable = false
+                setOnClickListener {
+                    (activity as? MainActivity)?.openBrowserWithUrl(platform.url)
+                }
+            }
+            platformsEmptyChips?.addView(chip)
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                kotlinx.coroutines.flow.combine(
+                    siteSessionViewModel.loggedInSessions,
+                    resultViewModel.totalCount
+                ) { sessions, count ->
+                    Pair(sessions, count > 0)
+                }.collectLatest { (sessions, hasResults) ->
+                    platformsCountPill?.text = if (sessions.isNotEmpty()) "(${sessions.size})" else ""
+                    if (sessions.isNotEmpty()) {
+                        platformsEmptyContainer?.isVisible = false
+                        recyclerViewPlatforms?.isVisible = true
+                        if (hasResults) {
+                            if (recyclerViewPlatforms?.layoutManager !is LinearLayoutManager ||
+                                (recyclerViewPlatforms?.layoutManager as? GridLayoutManager) != null
+                            ) {
+                                recyclerViewPlatforms?.layoutManager = LinearLayoutManager(
+                                    requireContext(),
+                                    RecyclerView.HORIZONTAL,
+                                    false
+                                )
+                            }
+                            siteSessionAdapter.compactStrip = true
+                            siteSessionAdapter.submitSessions(sessions, includeAddTile = false)
+                        } else {
+                            if (recyclerViewPlatforms?.layoutManager !is GridLayoutManager) {
+                                recyclerViewPlatforms?.layoutManager = GridLayoutManager(
+                                    requireContext(),
+                                    defaultColumns
+                                )
+                            }
+                            siteSessionAdapter.compactStrip = false
+                            siteSessionAdapter.submitSessions(sessions, includeAddTile = true)
+                        }
+                    } else {
+                        recyclerViewPlatforms?.isVisible = false
+                        platformsEmptyContainer?.isVisible = !hasResults
+                    }
+                }
+            }
+        }
+    }
 
     companion object {
         private const val TAG = "HomeFragment"

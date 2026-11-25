@@ -14,16 +14,20 @@ import com.deniscerri.ytdl.database.models.ResultItem
 import com.deniscerri.ytdl.database.repository.HistoryRepository.HistorySortType
 import com.deniscerri.ytdl.database.viewmodel.HistoryViewModel
 import com.deniscerri.ytdl.database.viewmodel.ResultViewModel
+import com.deniscerri.ytdl.util.BrowserMediaUtil
 import com.deniscerri.ytdl.util.Extensions.getIDFromYoutubeURL
 import com.deniscerri.ytdl.util.Extensions.isYoutubeChannelURL
 import com.deniscerri.ytdl.util.Extensions.isYoutubeURL
 import com.deniscerri.ytdl.util.Extensions.isYoutubeWatchVideosURL
 import com.deniscerri.ytdl.util.Extensions.needsDataUpdating
 import com.deniscerri.ytdl.util.FileUtil
+import com.deniscerri.ytdl.util.ImageDownloadHelper
 import com.deniscerri.ytdl.util.extractors.GoogleApiUtil
 import com.deniscerri.ytdl.util.extractors.YoutubeApiUtil
+import com.deniscerri.ytdl.util.extractors.fallback.LocalFallbackEngine
 import com.deniscerri.ytdl.util.extractors.newpipe.NewPipeUtil
 import com.deniscerri.ytdl.util.extractors.ytdlp.YTDLPUtil
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -49,6 +53,7 @@ class ResultRepository(private val resultDao: ResultDao, commandTemplateDao: Com
     }
 
     private fun isUsingNewPipeExtractorDataFetching() = sharedPreferences.getString("youtube_data_fetching_extractor", "YT_DLP") == "NEWPIPE"
+    private fun isInvisibleFallbackEnabled() = sharedPreferences.getBoolean("invisible_local_fallback", true)
 
     suspend fun insert(it: ResultItem){
         resultDao.insert(it)
@@ -182,10 +187,28 @@ class ResultRepository(private val resultDao: ResultDao, commandTemplateDao: Com
             Result.failure(Throwable())
         }
 
-        val res = if (newpipeExtractorResult.isSuccess) {
+        var primaryException: Throwable? = null
+        val primaryResults = if (newpipeExtractorResult.isSuccess) {
             newpipeExtractorResult.getOrNull()!!
-        }else{
-            ytdlpUtil.getFromYTDL( theURL, resultsGenerated = {})
+        } else {
+            try {
+                ytdlpUtil.getFromYTDL(theURL, resultsGenerated = {})
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                primaryException = e
+                emptyList()
+            }
+        }
+        val res = if (primaryResults.isNotEmpty()) {
+            primaryResults
+        } else if (isInvisibleFallbackEnabled()) {
+            val npFallback = runCatching { newPipeUtil.getVideoData(theURL).getOrNull() }.getOrNull()
+                ?.takeIf { it.isNotEmpty() }
+            npFallback ?: LocalFallbackEngine.extractResultItem(context, theURL)?.let { listOf(it) }
+                ?: if (primaryException != null) throw primaryException else emptyList()
+        } else {
+            if (primaryException != null) throw primaryException else emptyList()
         }
         currentCoroutineContext().ensureActive()
 
@@ -297,29 +320,91 @@ class ResultRepository(private val resultDao: ResultDao, commandTemplateDao: Com
             deleteAll()
         }
 
+        if (BrowserMediaUtil.isDirectStaticImageFile(inputQuery)) {
+            val imgItem = BrowserMediaUtil.buildImageOnlyResultItem(
+                url = inputQuery,
+                imageUrl = inputQuery
+            ).apply {
+                playlistTitle = YTDLNIS_SEARCH
+            }
+            val list = mutableListOf(imgItem)
+            if (resetResults) {
+                itemCount.value = 1
+            }
+            if (addToResults) {
+                val ids = resultDao.insertMultiple(list)
+                if (ids.isNotEmpty()) {
+                    imgItem.id = ids[0]
+                }
+            }
+            return list
+        }
+
         var itemsCount = 0
         val itemsToReturn = mutableListOf<ResultItem>()
 
-        ytdlpUtil.getFromYTDL(inputQuery, singleItem) { results ->
-            currentCoroutineContext().ensureActive()
-            if (resetResults) {
-                itemsCount += results.size
-                itemCount.value = itemsCount
-            }
-            results.filter { it.playlistTitle.isBlank() }.forEach { it.playlistTitle = YTDLNIS_SEARCH }
-            if (addToResults) {
-                val ids = resultDao.insertMultiple(results)
-                ids.forEachIndexed { index, id ->
-                    results[index].id = id
+        var primaryException: Throwable? = null
+        try {
+            ytdlpUtil.getFromYTDL(inputQuery, singleItem) { results ->
+                currentCoroutineContext().ensureActive()
+                if (resetResults) {
+                    itemsCount += results.size
+                    itemCount.value = itemsCount
                 }
+                results.filter { it.playlistTitle.isBlank() }.forEach { it.playlistTitle = YTDLNIS_SEARCH }
+                if (addToResults) {
+                    val ids = resultDao.insertMultiple(results)
+                    ids.forEachIndexed { index, id ->
+                        results[index].id = id
+                    }
+                }
+                itemsToReturn.addAll(results)
             }
-            itemsToReturn.addAll(results)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            primaryException = e
+        }
+
+        if (itemsToReturn.isEmpty() && inputQuery.startsWith("http", ignoreCase = true)) {
+            val fallbackItem = if (isInvisibleFallbackEnabled()) {
+                LocalFallbackEngine.extractResultItem(context, inputQuery)
+            } else if (BrowserMediaUtil.isLikelyPhotoPageUrl(inputQuery)) {
+                ImageDownloadHelper.extractImageCandidatesFromPage(inputQuery, context)
+                    .firstOrNull()
+                    ?.let { BrowserMediaUtil.buildImageOnlyResultItem(url = inputQuery, imageUrl = it) }
+            } else {
+                null
+            }
+            if (fallbackItem != null) {
+                currentCoroutineContext().ensureActive()
+                fallbackItem.playlistTitle = YTDLNIS_SEARCH
+                val list = mutableListOf(fallbackItem)
+                if (resetResults) {
+                    itemCount.value = 1
+                }
+                if (addToResults) {
+                    val ids = resultDao.insertMultiple(list)
+                    if (ids.isNotEmpty()) {
+                        fallbackItem.id = ids[0]
+                    }
+                }
+                itemsToReturn.add(fallbackItem)
+                return itemsToReturn
+            }
+        }
+
+        if (itemsToReturn.isEmpty() && primaryException != null) {
+            throw primaryException
         }
 
         return itemsToReturn
     }
 
     suspend fun getFormats(url: String, source : String? = null, ignoreInfoJson: Boolean = false) : List<Format> {
+        if (BrowserMediaUtil.isDirectStaticImageFile(url)) {
+            return emptyList()
+        }
         val formatSource = source ?: sharedPreferences.getString("formats_source", "yt-dlp")
         val res = if (url.isYoutubeURL()) {
             when(formatSource) {
@@ -340,7 +425,12 @@ class ResultRepository(private val resultDao: ResultDao, commandTemplateDao: Com
         return if (res.isSuccess){
             res.getOrNull()!!
         }else{
-            ytdlpUtil.getFormats(url, ignoreInfoJson)
+            val ytdlpFormats = ytdlpUtil.getFormats(url, ignoreInfoJson)
+            if (ytdlpFormats.isEmpty() && isInvisibleFallbackEnabled() && url.startsWith("http", ignoreCase = true)) {
+                runCatching { LocalFallbackEngine.extractFormats(context, url) }.getOrDefault(emptyList())
+            } else {
+                ytdlpFormats
+            }
         }
     }
 

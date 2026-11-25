@@ -38,6 +38,7 @@ import com.deniscerri.ytdl.database.repository.DownloadRepository
 import com.deniscerri.ytdl.database.repository.HistoryRepository
 import com.deniscerri.ytdl.database.repository.ResultRepository
 import com.deniscerri.ytdl.ui.downloadcard.MultipleItemFormatTuple
+import com.deniscerri.ytdl.util.BrowserMediaUtil
 import com.deniscerri.ytdl.util.LocaleUtil
 import com.deniscerri.ytdl.util.Extensions.needsDataUpdating
 import com.deniscerri.ytdl.util.Extensions.toListString
@@ -225,6 +226,10 @@ class DownloadViewModel(private val application: Application) : AndroidViewModel
     }
 
     fun getDownloadType(t: DownloadType? = null, url: String) : DownloadType {
+        if (t == null && (BrowserMediaUtil.isDirectStaticImageFile(url) || BrowserMediaUtil.isLikelyPhotoPageUrl(url))) {
+            return DownloadType.image
+        }
+
         var type = t
 
         if (type == null){
@@ -239,14 +244,25 @@ class DownloadViewModel(private val application: Application) : AndroidViewModel
 
         return when(type){
             DownloadType.auto -> {
-                if (urlsForAudioType.any { url.contains(it) }){
-                    DownloadType.audio
-                }else{
-                    DownloadType.video
+                when {
+                    BrowserMediaUtil.isDirectStaticImageFile(url) || BrowserMediaUtil.isLikelyPhotoPageUrl(url) -> DownloadType.image
+                    urlsForAudioType.any { url.contains(it) } -> DownloadType.audio
+                    else -> DownloadType.video
                 }
             }
 
             else -> type
+        }
+    }
+
+    fun resolveDownloadTypeForResult(
+        result: ResultItem,
+        preferredType: DownloadType? = null
+    ): DownloadType {
+        return when {
+            BrowserMediaUtil.isImageOnlyResult(result) -> DownloadType.image
+            BrowserMediaUtil.isAudioOnlyResult(result) -> DownloadType.audio
+            else -> getDownloadType(preferredType, result.url)
         }
     }
 
@@ -275,17 +291,22 @@ class DownloadViewModel(private val application: Application) : AndroidViewModel
             DownloadType.video -> sharedPreferences.getString("file_name_template", "%(uploader).30B - %(title).170B")!!
             else -> ""
         }
-        customFileNameTemplate = applySubdirectoryPreferences(customFileNameTemplate)
+        if (type != DownloadType.image) {
+            customFileNameTemplate = applySubdirectoryPreferences(customFileNameTemplate)
+        }
 
         val downloadPath = when(type){
             DownloadType.audio -> sharedPreferences.getString("music_path", FileUtil.getDefaultAudioPath())
             DownloadType.video -> sharedPreferences.getString("video_path",  FileUtil.getDefaultVideoPath())
+            DownloadType.image -> sharedPreferences.getString("image_path", FileUtil.getDefaultImagePath())
             else -> sharedPreferences.getString("command_path", FileUtil.getDefaultCommandPath())
         }
 
         val container = when(type){
-            DownloadType.audio -> sharedPreferences.getString("audio_format", "")
-            else -> sharedPreferences.getString("video_format", "")
+            DownloadType.audio -> sharedPreferences.getString("audio_format", "mp3")!!.ifBlank { "mp3" }
+            DownloadType.video -> sharedPreferences.getString("video_format", "mp4")!!.ifBlank { "mp4" }
+            DownloadType.image -> "jpg"
+            else -> ""
         }
 
 
@@ -328,6 +349,19 @@ class DownloadViewModel(private val application: Application) : AndroidViewModel
             }
         }.joinToString(" ") { it.content }
 
+        val resolvedFormat = if (type == DownloadType.image) {
+            val resolvedImg = BrowserMediaUtil.resolveBestImageUrl(resultItem)
+                ?: resultItem.thumb.ifBlank { resultItem.url }
+            Format(
+                format_id = "image_original",
+                container = "jpg",
+                format_note = "Original",
+                url = resolvedImg
+            )
+        } else {
+            getFormat(resultItem.formats, type, resultItem.url)
+        }
+
         return DownloadItem(0,
             resultItem.url,
             resultItem.title,
@@ -335,8 +369,8 @@ class DownloadViewModel(private val application: Application) : AndroidViewModel
             resultItem.thumb,
             resultItem.duration,
             type,
-            getFormat(resultItem.formats, type, resultItem.url),
-            container!!,
+            resolvedFormat,
+            container,
             "",
             resultItem.formats.toMutableList(),
             downloadPath!!, resultItem.website,
@@ -427,11 +461,15 @@ class DownloadViewModel(private val application: Application) : AndroidViewModel
             when(type){
                 DownloadType.audio -> {
                     updatedDownloadPath = sharedPreferences.getString("music_path", FileUtil.getDefaultAudioPath())!!
-                    container = sharedPreferences.getString("audio_format", "")!!
+                    container = sharedPreferences.getString("audio_format", "mp3")!!.ifBlank { "mp3" }
                 }
                 DownloadType.video -> {
                     updatedDownloadPath = sharedPreferences.getString("video_path", FileUtil.getDefaultVideoPath())!!
-                    container = sharedPreferences.getString("video_format", "")!!
+                    container = sharedPreferences.getString("video_format", "mp4")!!.ifBlank { "mp4" }
+                }
+                DownloadType.image -> {
+                    updatedDownloadPath = sharedPreferences.getString("image_path", FileUtil.getDefaultImagePath())!!
+                    container = "jpg"
                 }
                 DownloadType.command -> {
                     updatedDownloadPath = sharedPreferences.getString("command_path", FileUtil.getDefaultCommandPath())!!
@@ -472,14 +510,16 @@ class DownloadViewModel(private val application: Application) : AndroidViewModel
         customFileNameTemplate = applySubdirectoryPreferences(customFileNameTemplate)
 
         val container = when(historyItem.type){
-            DownloadType.audio -> sharedPreferences.getString("audio_format", "Default")!!
-            DownloadType.video -> sharedPreferences.getString("video_format", "Default")!!
+            DownloadType.audio -> sharedPreferences.getString("audio_format", "mp3")!!.ifBlank { "mp3" }
+            DownloadType.video -> sharedPreferences.getString("video_format", "mp4")!!.ifBlank { "mp4" }
+            DownloadType.image -> "jpg"
             else -> ""
         }
 
         val defaultPath = when(historyItem.type) {
             DownloadType.audio -> FileUtil.getDefaultAudioPath()
             DownloadType.video -> FileUtil.getDefaultVideoPath()
+            DownloadType.image -> FileUtil.getDefaultImagePath()
             DownloadType.command -> FileUtil.getDefaultCommandPath()
             else -> ""
         }
@@ -584,6 +624,14 @@ class DownloadViewModel(private val application: Application) : AndroidViewModel
                     }catch (e: Exception){
                         formatUtil.getGenericVideoFormats(resources).first()
                     }
+                )
+            }
+            DownloadType.image -> {
+                return Format(
+                    format_id = "image_original",
+                    container = "jpg",
+                    format_note = "Original",
+                    url = url
                 )
             }
             else -> {

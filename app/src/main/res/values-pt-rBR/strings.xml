@@ -585,7 +585,7 @@
         <item quantity="many">A cada %d meses</item>
         <item quantity="other">A cada %d meses</item>
     </plurals>
-    <string name="bgutils_info">Um provedor de token de prova de origem (POT) para yt-dlp.\nCom ele ativado, o YTDLnis hospeda o servidor HTTP que gera o POT e instala o plugin relacionado que o yt-dlp utiliza.</string>
+    <string name="bgutils_info">Um provedor de token de prova de origem (POT) para yt-dlp.\nCom ele ativado, o YTDL Pro hospeda o servidor HTTP que gera o POT e instala o plugin relacionado que o yt-dlp utiliza.</string>
     <string name="bgutils_pot_generation_server">Servidor HTTP</string>
     <string name="bgutils_pot_generation_script_summary">Cada chamada ao yt-dlp acarreta a sobrecarga de criar um novo processo de ambiente de execução JavaScript para rodar o script. Esse método não é recomendado para cenários de alta concorrência.</string>
     <string name="bgutils_pot_server_summary">Este é um servidor HTTP em JavaScript, na porta 4416. Se estiver inativo, ele inicia automaticamente quando a lista de downloads começa a ser executada ou quando a verificação de fontes é agendada. Para encerrá-lo, é preciso fazê-lo manualmente através das notificações!</string>
@@ -598,7 +598,7 @@
     <string name="notset">Não definido</string>
     <string name="external">Externo</string>
     <string name="exit">Sair</string>
-    <string name="packages_description">Pacotes são aplicativos auxiliares que o YTDLnis utiliza para auxiliar na execução de comandos do yt-dlp. Alguns deles já vêm integrados ao aplicativo, mas você pode instalar versões mais recentes disponibilizadas sem precisar atualizar o próprio YTDLnis. Os APKs instalados substituem a versão integrada utilizada pelo aplicativo.</string>
+    <string name="packages_description">Pacotes são aplicativos auxiliares que o YTDL Pro utiliza para auxiliar na execução de comandos do yt-dlp. Alguns deles já vêm integrados ao aplicativo, mas você pode instalar versões mais recentes disponibilizadas sem precisar atualizar o próprio YTDL Pro. Os APKs instalados substituem a versão integrada utilizada pelo aplicativo.</string>
     <string name="bgutils_pot_generation_script_info">Para usar o BgUtils POT Provider, o aplicativo precisa baixar o repositório Brainicism/bgutil-ytdlp-pot-provider do GitHub e iniciar a instalação. Isso pode levar algum tempo para ser concluído. Deseja prosseguir agora?</string>
     <string name="burn_subs">Incrustar legendas</string>
     <string name="check_clipboard_home_summary">Detectar automaticamente URLs na área de transferência na tela inicial</string>
@@ -655,7 +655,7 @@
     <string name="merge_cuts">Mesclar cortes em um único arquivo</string>
     <string name="write_ytdlp_terminal">Inserir yt-dlp automaticamente no terminal</string>
     <string name="clear">Limpar</string>
-    <string name="welcome_title">Boas-vindas ao YTDLnis</string>
+    <string name="welcome_title">Boas-vindas ao YTDL Pro</string>
     <string name="welcome_subtitle">Baixe vídeos e áudios usando o yt-dlp. Vamos configurar algumas coisas primeiro.</string>
     <string name="welcome_get_started">Começar</string>
     <string name="welcome_restore_backup">Restaurar de um backup</string>
@@ -665,7 +665,7 @@
     <string name="welcome_guide_summary">O guia cobre tudo sobre o aplicativo, downloads, modelos de comandos e solução de problemas comuns. Você pode abri-lo a qualquer momento pelo site.</string>
     <string name="welcome_open_guide">Abrir guia</string>
     <string name="welcome_permissions_title">Permissões</string>
-    <string name="welcome_permissions_summary">O YTDLnis funciona melhor com essas permissões. Você pode alterá-las depois nas configurações.</string>
+    <string name="welcome_permissions_summary">O YTDL Pro funciona melhor com essas permissões. Você pode alterá-las depois nas configurações.</string>
     <string name="welcome_perm_storage">Acesso ao armazenamento</string>
     <string name="welcome_perm_storage_summary">Necessário para salvar seus downloads no dispositivo.</string>
     <string name="welcome_perm_notifications">Notificações</string>
@@ -678,7 +678,7 @@
     <string name="welcome_allowed">Permitido</string>
     <string name="welcome_required">Obrigatório</string>
     <string name="welcome_updates_title">Atualizações</string>
-    <string name="welcome_updates_summary">Escolha como o YTDLnis se mantém atualizado.</string>
+    <string name="welcome_updates_summary">Escolha como o YTDL Pro se mantém atualizado.</string>
     <string name="welcome_next">Avançar</string>
     <string name="welcome_finish">Concluir</string>
     <string name="lyrics">Letras</string>

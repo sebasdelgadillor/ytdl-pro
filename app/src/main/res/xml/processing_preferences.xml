@@ -152,7 +152,7 @@
             app:title="@string/prefer_container_over_codec_audio" />
 
         <ListPreference
-            android:defaultValue=""
+            android:defaultValue="mp3"
             android:entries="@array/audio_containers"
             android:entryValues="@array/audio_containers_values"
             android:icon="@drawable/ic_code"
@@ -263,7 +263,7 @@
 
 
         <ListPreference
-            android:defaultValue=""
+            android:defaultValue="mp4"
             android:entries="@array/video_containers"
             android:entryValues="@array/video_containers_values"
             android:icon="@drawable/ic_code"

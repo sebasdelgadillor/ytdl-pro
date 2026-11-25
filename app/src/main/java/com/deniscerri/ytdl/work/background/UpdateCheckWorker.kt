@@ -33,7 +33,7 @@ class UpdateCheckWorker(
         if (!sharedPreferences.getBoolean(PREF_ENABLED, true)) return Result.success()
         val types = sharedPreferences.getStringSet(PREF_TYPES, DEFAULT_TYPES)!!
 
-        if (types.contains("app") && BuildConfig.FLAVOR == "github") {
+        if (types.contains("app") && UpdateUtil.isAppSelfUpdateConfigured() && BuildConfig.FLAVOR == "github") {
             val newRelease = updateUtil.tryGetNewVersion()
             if (newRelease.isSuccess) {
                 notificationUtil.showNewAppUpdate(newRelease.getOrNull()!!.tag_name)

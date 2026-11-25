@@ -39,6 +39,7 @@ import com.deniscerri.ytdl.database.models.SearchHistoryItem
 import com.deniscerri.ytdl.database.models.TemplateShortcut
 import com.deniscerri.ytdl.database.models.observeSources.ObserveSourcesItem
 import com.deniscerri.ytdl.database.viewmodel.SettingsViewModel
+import com.deniscerri.ytdl.ui.more.ForkInfoDialog
 import com.deniscerri.ytdl.util.LocaleUtil
 import com.deniscerri.ytdl.util.BackupSettingsUtil
 import com.deniscerri.ytdl.util.FileUtil
@@ -161,8 +162,8 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
-        findPreference<Preference>("translators")?.setOnPreferenceClickListener {
-            TranslatorsDialog.show(requireContext())
+        findPreference<Preference>("about_fork")?.setOnPreferenceClickListener {
+            ForkInfoDialog.show(requireContext())
             true
         }
 

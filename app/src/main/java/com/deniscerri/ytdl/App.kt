@@ -21,7 +21,9 @@ import com.deniscerri.ytdl.util.BgUtilsPoTokenGeneratorUtil
 import com.deniscerri.ytdl.util.Extensions.hasReachedEnd
 import com.deniscerri.ytdl.util.NotificationUtil
 import com.deniscerri.ytdl.util.ObserveAlarmScheduler
+import com.deniscerri.ytdl.util.ProcessCacheGuardian
 import com.deniscerri.ytdl.util.ThemeUtil
+import com.deniscerri.ytdl.util.rules.WebRulesRegistry
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +41,7 @@ class App : Application() {
         val sharedPreferences =  PreferenceManager.getDefaultSharedPreferences(this@App)
         setDefaultValues()
         ThemeUtil.init(this)
+        WebRulesRegistry.init(this)
 
         val processName = getProcessNameImpl()
         if (processName.endsWith(":incognito_process") && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -64,6 +67,11 @@ class App : Application() {
                 db.observeSourcesDao.getAllSources()
                     .filter { it.status == ObserveSourcesRepository.SourceStatus.ACTIVE && !it.hasReachedEnd() }
                     .forEach { scheduler.schedule(it) }         // idempotent: FLAG_UPDATE_CURRENT updates in place
+
+                runCatching {
+                    val protectedIds = db.downloadDao.getActiveAndQueuedDownloadIDs().toSet()
+                    ProcessCacheGuardian.sweepOrphanedCaches(this@App, protectedIds)
+                }
 
             }catch (e: Exception){
                 Looper.prepare().runCatching {

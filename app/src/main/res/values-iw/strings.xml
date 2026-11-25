@@ -670,7 +670,7 @@
     <string name="temporary_configurations_summary">הגדרות פקודות, רשימות כתובות וקבצים קצרי מועד אחרים</string>
     <string name="write_ytdlp_terminal">כתיבה אוטומטית של yt-dlp במסוף</string>
     <string name="clear">פינוי</string>
-    <string name="welcome_title">ברוך בואך ל־YTDLnis</string>
+    <string name="welcome_title">ברוך בואך ל־YTDL Pro</string>
     <string name="welcome_subtitle">הורדת סרטונים ושמע באמצעות yt-dlp. קודם כל צריך להגדיר כל מיני דברים.</string>
     <string name="welcome_get_started">מאיפה מתחילים</string>
     <string name="welcome_restore_backup">שחזור מגיבוי</string>
@@ -680,7 +680,7 @@
     <string name="welcome_guide_summary">המדריך מכסה כל נושא שקשור ביישומון, הורדה, תבניות פקודות ותיקון תקלות נפוצות. אפשר לפתוח אותו בכל עת ישירות מהאתר.</string>
     <string name="welcome_open_guide">פתיחת המדריך</string>
     <string name="welcome_permissions_title">הרשאות</string>
-    <string name="welcome_permissions_summary">YTDLnis עובד הכי טוב עם אלה. אפשר לשנות אותם בהמשך דרך ההגדרות.</string>
+    <string name="welcome_permissions_summary">YTDL Pro עובד הכי טוב עם אלה. אפשר לשנות אותם בהמשך דרך ההגדרות.</string>
     <string name="welcome_perm_storage">גישה לאחסון</string>
     <string name="welcome_perm_storage_summary">נחוץ כדי לשמור את ההורדות במכשיר שלך.</string>
     <string name="welcome_perm_notifications">התראות</string>
@@ -695,7 +695,7 @@
     <string name="welcome_perm_folders_header">תיקיות ששוחזרו</string>
     <string name="welcome_perm_folders_summary">הגיבוי שלך משתמש בתיקיות האלה אבל היישומון איבד את הגישה אליהן. יש להרשות על אחת מהן מחדש או לבחור תיקייה אחרת לשימוש במקום.</string>
     <string name="welcome_updates_title">עדכונים</string>
-    <string name="welcome_updates_summary">נא לבחור איך YTDLnis נשאר עדכני.</string>
+    <string name="welcome_updates_summary">נא לבחור איך YTDL Pro נשאר עדכני.</string>
     <string name="welcome_next">הבא</string>
     <string name="welcome_finish">סיום</string>
     <string name="lyrics">מילות שירים</string>
@@ -715,9 +715,9 @@
     <string name="internal_plugin_ffmpeg_preset">ערכה של FFmpeg לתוספים פנימיים</string>
     <string name="internal_plugin_ffmpeg_preset_summary">ערכת FFmpeg לתוספים פנימיים כמו צריבת כתוביות וכו׳. כיוון ההעדפה הזאת משפיע על גודל הקובץ הסופי!</string>
     <string name="toggle_all">החלפת המצב של כולם</string>
-    <string name="bgutils_info">ספק POT (אסימון הוכחת מקור) ל־yt-dlp.\nכשהוא פעיל, YTDLnis מארח את שרת ה־HTTP שמייצר את ה־POT ומתקין את התוסף התואם שבו yt-dlp משתמש.</string>
+    <string name="bgutils_info">ספק POT (אסימון הוכחת מקור) ל־yt-dlp.\nכשהוא פעיל, YTDL Pro מארח את שרת ה־HTTP שמייצר את ה־POT ומתקין את התוסף התואם שבו yt-dlp משתמש.</string>
     <string name="bgutils_pot_generation_script_summary">כל קריאה של yt-dlp גוררת תוספת של הזנקת תהליך זמן ריצה חדש של js כדי להריץ את הסקריפט. השיטה הזאת לא מומלצת לשימוש עם מקביליות גבוהה.</string>
     <string name="bgutils_pot_generation_script_info">כדי להשתמש בספק POT (אסימון הוכחת מקור) של BgUtils (עזרי רקע), היישומון צריך להוריד את המאגר Brainicism/bgutil-ytdlp-pot-provider מ־GitHub כדי להתחיל בהתקנה. היא עלולה לארוך זמן מה. להמשיך כרגע?</string>
     <string name="info_jsons">Info-JSONs</string>
-    <string name="packages_description">חבילות הן יישומי סיוע שבהן YTDLnis משתמש כדי לסייע בפקודות yt-dlp. חלק מהן כבר מוטמאות אבל אפשר להתקין גרסאות חדשות יותר שמופצות מבלי שצריך לעדכן את היישומון. ה־apk המותקן מחליף את הגרסה המאוגדת שבה משתמש היישומון.</string>
+    <string name="packages_description">חבילות הן יישומי סיוע שבהן YTDL Pro משתמש כדי לסייע בפקודות yt-dlp. חלק מהן כבר מוטמאות אבל אפשר להתקין גרסאות חדשות יותר שמופצות מבלי שצריך לעדכן את היישומון. ה־apk המותקן מחליף את הגרסה המאוגדת שבה משתמש היישומון.</string>
 </resources>

@@ -525,7 +525,7 @@
     <string name="embed_lyrics">嵌入歌詞</string>
     <string name="save_lrc_file">儲存為 .lrc 檔案</string>
     <string name="lyrics">歌詞</string>
-    <string name="bgutils_info">yt-dlp 的來源證明令牌 (PO Token) 提供者。\n啟用此功能後，YTDLnis 將託管產生 POT 的 HTTP 伺服器，並安裝 yt-dlp 所使用的相關外掛程式。</string>
+    <string name="bgutils_info">yt-dlp 的來源證明令牌 (PO Token) 提供者。\n啟用此功能後，YTDL Pro 將託管產生 POT 的 HTTP 伺服器，並安裝 yt-dlp 所使用的相關外掛程式。</string>
     <string name="write_atleast_one_potoken">你需要寫入來源證明令牌至少一次</string>
     <string name="x_offset">X 偏移量</string>
     <string name="y_offset">Y 偏移量</string>

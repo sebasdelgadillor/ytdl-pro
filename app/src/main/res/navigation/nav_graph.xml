@@ -41,6 +41,18 @@
             app:destination="@id/terminalActivity" />
     </fragment>
     <fragment
+        android:id="@+id/browserFragment"
+        android:name="com.deniscerri.ytdl.ui.browser.BrowserFragment"
+        android:label="@string/browser"
+        tools:layout="@layout/fragment_browser" >
+        <action
+            android:id="@+id/action_browserFragment_to_downloadBottomSheetDialog"
+            app:destination="@id/downloadBottomSheetDialog" />
+        <action
+            android:id="@+id/action_browserFragment_to_downloadsAlreadyExistDialog"
+            app:destination="@id/downloadsAlreadyExistDialog" />
+    </fragment>
+    <fragment
         android:id="@+id/historyFragment"
         android:name="com.deniscerri.ytdl.ui.downloads.HistoryFragment"
         android:label="@string/downloads"

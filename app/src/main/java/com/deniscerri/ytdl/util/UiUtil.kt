@@ -625,6 +625,9 @@ object UiUtil {
                 DownloadType.video -> {
                     R.drawable.ic_video
                 }
+                DownloadType.image -> {
+                    R.drawable.ic_image
+                }
                 else -> {
                     R.drawable.ic_terminal
                 }

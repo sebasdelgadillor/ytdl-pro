@@ -165,7 +165,10 @@ open class WebViewActivity : BaseActivity() {
                         webView = view
                         super.onPageFinished(view, url)
                         runCatching {
-                            toolbar.title = view?.title ?: ""
+                            val pageTitle = view?.title.orEmpty()
+                            if (toolbar.title?.toString() != pageTitle) {
+                                toolbar.title = pageTitle
+                            }
                             cookies = cookieManager.getCookie(view?.url)
                         }
 

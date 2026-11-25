@@ -14,6 +14,7 @@ import com.deniscerri.ytdl.database.dao.LogDao
 import com.deniscerri.ytdl.database.dao.ObserveSourcesDao
 import com.deniscerri.ytdl.database.dao.ResultDao
 import com.deniscerri.ytdl.database.dao.SearchHistoryDao
+import com.deniscerri.ytdl.database.dao.SiteSessionDao
 import com.deniscerri.ytdl.database.dao.TerminalDao
 import com.deniscerri.ytdl.database.models.CommandTemplate
 import com.deniscerri.ytdl.database.models.CookieItem
@@ -22,6 +23,7 @@ import com.deniscerri.ytdl.database.models.HistoryItem
 import com.deniscerri.ytdl.database.models.LogItem
 import com.deniscerri.ytdl.database.models.ResultItem
 import com.deniscerri.ytdl.database.models.SearchHistoryItem
+import com.deniscerri.ytdl.database.models.SiteSession
 import com.deniscerri.ytdl.database.models.TemplateShortcut
 import com.deniscerri.ytdl.database.models.TerminalItem
 import com.deniscerri.ytdl.database.models.observeSources.ObserveSourcesItem
@@ -38,9 +40,10 @@ import com.deniscerri.ytdl.database.models.observeSources.ObserveSourcesItem
         CookieItem::class,
         LogItem::class,
         TerminalItem::class,
-        ObserveSourcesItem::class
+        ObserveSourcesItem::class,
+        SiteSession::class
    ],
-    version = 29,
+    version = 30,
     autoMigrations = [
         AutoMigration (from = 1, to = 2),
         AutoMigration (from = 2, to = 3),
@@ -69,7 +72,8 @@ import com.deniscerri.ytdl.database.models.observeSources.ObserveSourcesItem
         //AutoMigration(from = 25, to = 26) MANUALLY HANDLED
         AutoMigration(from = 26, to = 27),
         AutoMigration(from = 27, to = 28),
-        AutoMigration(from = 28, to = 29)
+        AutoMigration(from = 28, to = 29),
+        AutoMigration(from = 29, to = 30)
     ]
 )
 abstract class DBManager : RoomDatabase(){
@@ -82,6 +86,7 @@ abstract class DBManager : RoomDatabase(){
     abstract val logDao: LogDao
     abstract val terminalDao: TerminalDao
     abstract val observeSourcesDao: ObserveSourcesDao
+    abstract val siteSessionDao: SiteSessionDao
 
     enum class SORTING{
         DESC, ASC

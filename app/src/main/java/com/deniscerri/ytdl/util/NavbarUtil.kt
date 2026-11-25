@@ -22,8 +22,11 @@ object NavbarUtil {
         settings = PreferenceManager.getDefaultSharedPreferences(context)
     }
 
+    private const val DEFAULT_NAV_BAR_PREFS = "0,1,2,4,3,-5"
+
     private var navItems = mapOf(
         "Home" to R.id.homeFragment,
+        "Browser" to R.id.browserFragment,
         "History" to R.id.historyFragment,
         "Queue" to R.id.downloadQueueMainFragment,
         "Terminal" to R.id.terminalActivity,
@@ -65,23 +68,34 @@ object NavbarUtil {
         val p = PopupMenu(context, null)
         MenuInflater(context).inflate(R.menu.bottom_nav_menu, p.menu)
 
-        if (prefItems.size == p.menu.size()) {
+        val resolvedItems = if (prefItems.size == p.menu.size()) {
+            prefItems
+        } else {
+            DEFAULT_NAV_BAR_PREFS.split(",")
+        }
+
+        if (resolvedItems.size == p.menu.size()) {
             val navBarItems = mutableListOf<MenuItem>()
-            prefItems.forEach {
-                navBarItems.add(
-                    p.menu[it.replace("-", "").toInt()].apply {
-                        this.isVisible = !it.contains("-")
-                    }
-                )
+            resolvedItems.forEach {
+                val idx = it.replace("-", "").toInt()
+                if (idx in 0 until p.menu.size()) {
+                    navBarItems.add(
+                        p.menu[idx].apply {
+                            this.isVisible = !it.contains("-")
+                        }
+                    )
+                }
             }
-            return navBarItems
+            if (navBarItems.size == p.menu.size()) {
+                return navBarItems
+            }
         }
         return getDefaultNavBarItems(context)
     }
 
     private fun getNavBarPrefs(): List<String> {
         return settings
-            .getString("navigation_bar", "0,1,3,2,-4")!!
+            .getString("navigation_bar", DEFAULT_NAV_BAR_PREFS)!!
             .split(",")
     }
 
@@ -121,8 +135,10 @@ object NavbarUtil {
             this.menu.removeItem(it.itemId)
         }
 
+        var addedCount = 0
+        val maxItems = if (this is com.google.android.material.bottomnavigation.BottomNavigationView) 5 else Int.MAX_VALUE
         navBarItems.forEach { navBarItem ->
-            if (navBarItem.isVisible) {
+            if (navBarItem.isVisible && addedCount < maxItems) {
                 val menuItem = menuItems.first { it.itemId == navBarItem.itemId }
 
                 this.menu.add(
@@ -131,6 +147,7 @@ object NavbarUtil {
                     Menu.NONE,
                     menuItem.title
                 ).icon = menuItem.icon
+                addedCount++
             }
         }
         return getStartFragmentId(this.context)

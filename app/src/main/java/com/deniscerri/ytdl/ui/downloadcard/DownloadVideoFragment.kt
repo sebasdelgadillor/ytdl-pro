@@ -33,13 +33,18 @@ import com.deniscerri.ytdl.database.viewmodel.FormatViewModel
 import com.deniscerri.ytdl.database.viewmodel.ResultViewModel
 import com.deniscerri.ytdl.database.viewmodel.YTDLPViewModel
 import com.deniscerri.ytdl.ui.downloadcard.crop.CropVideoBottomSheetDialog
+import com.deniscerri.ytdl.util.AccessibilityUtil
+import com.deniscerri.ytdl.util.BrowserMediaUtil
 import com.deniscerri.ytdl.util.Extensions.applyFilenameTemplateForCuts
 import com.deniscerri.ytdl.util.Extensions.createBadge
 import com.deniscerri.ytdl.util.FileUtil
 import com.deniscerri.ytdl.util.FormatUtil
+import com.deniscerri.ytdl.util.QualityCapsuleUtil
 import com.deniscerri.ytdl.util.UiUtil
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputLayout
@@ -105,7 +110,7 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
         super.onViewCreated(view, savedInstanceState)
         lifecycleScope.launch {
             downloadItem = withContext(Dispatchers.IO){
-                if (savedInstanceState?.containsKey("updated") == true) {
+                if (savedInstanceState?.containsKey("updated") == true && ::downloadItem.isInitialized) {
                     downloadItem.apply {
                         title = resultItem!!.title
                         author = resultItem!!.author
@@ -135,7 +140,8 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
             try {
                 title = view.findViewById(R.id.title_textinput)
                 title.visibility = if (shownFields.contains("title") && !nonSpecific) View.VISIBLE else View.GONE
-                if (title.editText?.text?.isEmpty() == true){
+                val existingTitle = title.editText?.text?.toString().orEmpty()
+                if (existingTitle.isEmpty() || (savedInstanceState?.containsKey("updated") == true && BrowserMediaUtil.isGenericPlaceholderTitle(existingTitle))){
                     title.editText!!.setText(downloadItem.title)
                     title.endIconMode = END_ICON_NONE
                 }
@@ -149,7 +155,8 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
 
                 author = view.findViewById(R.id.author_textinput)
                 author.visibility = if (shownFields.contains("author") && !nonSpecific) View.VISIBLE else View.GONE
-                if (author.editText?.text?.isEmpty() == true){
+                val existingAuthor = author.editText?.text?.toString().orEmpty()
+                if (existingAuthor.isEmpty() || (savedInstanceState?.containsKey("updated") == true && BrowserMediaUtil.isGenericPlaceholderTitle(existingAuthor))){
                     author.editText!!.setText(downloadItem.author)
                     author.endIconMode = END_ICON_NONE
                 }
@@ -162,16 +169,28 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
                 })
 
                 if (savedInstanceState?.containsKey("updated") == true){
-                    if (!listOf(resultItem?.title, downloadItem.title).contains(title.editText?.text.toString())){
-                        title.endIconMode = END_ICON_CUSTOM
-                        title.endIconDrawable = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_refresh)
-                        downloadItem.title = title.editText?.text.toString()
+                    val currentUiTitle = title.editText?.text.toString()
+                    if (!listOf(resultItem?.title, downloadItem.title).contains(currentUiTitle)){
+                        if (BrowserMediaUtil.isGenericPlaceholderTitle(currentUiTitle)) {
+                            title.editText?.setText(downloadItem.title)
+                            title.endIconMode = END_ICON_NONE
+                        } else {
+                            title.endIconMode = END_ICON_CUSTOM
+                            title.endIconDrawable = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_refresh)
+                            downloadItem.title = currentUiTitle
+                        }
                     }
 
-                    if (!listOf(resultItem?.author, downloadItem.author).contains(author.editText?.text.toString())){
-                        author.endIconMode = END_ICON_CUSTOM
-                        author.endIconDrawable = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_refresh)
-                        downloadItem.author = author.editText?.text.toString()
+                    val currentUiAuthor = author.editText?.text.toString()
+                    if (!listOf(resultItem?.author, downloadItem.author).contains(currentUiAuthor)){
+                        if (BrowserMediaUtil.isGenericPlaceholderTitle(currentUiAuthor)) {
+                            author.editText?.setText(downloadItem.author)
+                            author.endIconMode = END_ICON_NONE
+                        } else {
+                            author.endIconMode = END_ICON_CUSTOM
+                            author.endIconDrawable = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_refresh)
+                            downloadItem.author = currentUiAuthor
+                        }
                     }
                 }
 
@@ -246,8 +265,10 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
                 }
                 val containerAutoCompleteTextView =
                     view.findViewById<AutoCompleteTextView>(R.id.container_textview)
-                var containerPreference = sharedPreferences.getString("video_format", "Default")
-                if (containerPreference == "Default") containerPreference = getString(R.string.defaultValue)
+                var containerPreference = sharedPreferences.getString("video_format", "mp4")
+                if (containerPreference.isNullOrBlank() || containerPreference == "Default") {
+                    containerPreference = "mp4"
+                }
 
                 if (formats.isEmpty()) formats = genericVideoFormats
 
@@ -278,6 +299,7 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
                             showSize = downloadItem.downloadSections.isEmpty()
                         )
                         formatViewModel.checkFreeSpace(filesize, downloadItem.downloadPath)
+                        renderVideoCapsules(view, applySelection = false)
                     }
                 }
                 formatCard.setOnClickListener{
@@ -301,17 +323,39 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
                         containers
                     )
                 )
-                if (currentDownloadItem == null || !containers.contains(downloadItem.container.ifEmpty { getString(R.string.defaultValue) })){
+                if (currentDownloadItem == null || downloadItem.container.isBlank() || !containers.contains(downloadItem.container.ifEmpty { getString(R.string.defaultValue) })){
                     downloadItem.container = if (containerPreference == getString(R.string.defaultValue)) "" else containerPreference!!
                 }
                 containerAutoCompleteTextView!!.setText(
                     downloadItem.container.ifEmpty { getString(R.string.defaultValue) },
                     false)
 
+                val standardBadge = view.findViewById<TextView>(R.id.video_standard_badge)
+                standardBadge?.text = downloadItem.container.ifBlank { "mp4" }.uppercase()
+
+                val advancedContainer = view.findViewById<LinearLayout>(R.id.video_advanced_container)
+                val toggleAdvancedBtn = view.findViewById<MaterialButton>(R.id.btn_toggle_advanced_video)
+                AccessibilityUtil.setStateDescription(
+                    toggleAdvancedBtn,
+                    getString(if (advancedContainer?.isVisible == true) R.string.state_expanded else R.string.state_collapsed)
+                )
+                toggleAdvancedBtn?.setOnClickListener {
+                    val nextVisible = advancedContainer?.isVisible != true
+                    advancedContainer?.isVisible = nextVisible
+                    toggleAdvancedBtn.setText(
+                        if (nextVisible) R.string.hide_advanced_options else R.string.advanced_options
+                    )
+                    AccessibilityUtil.setStateDescription(
+                        toggleAdvancedBtn,
+                        getString(if (nextVisible) R.string.state_expanded else R.string.state_collapsed)
+                    )
+                }
+
                 (container!!.editText as AutoCompleteTextView?)!!.onItemClickListener =
                     AdapterView.OnItemClickListener { _: AdapterView<*>?, _: View?, index: Int, _: Long ->
                         downloadItem.container = containers[index]
                         if (containers[index] == getString(R.string.defaultValue)) downloadItem.container = ""
+                        standardBadge?.text = downloadItem.container.ifBlank { "MP4" }.uppercase()
                         if (containers[index] == "gif") {
                             view.findViewById<Chip>(R.id.adjust_audio).isEnabled = false
                             downloadItem.videoPreferences.removeAudio = true
@@ -329,7 +373,10 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
                 if (downloadItem.videoPreferences.compatibilityMode) {
                     containerAutoCompleteTextView.setText("mp4",false)
                     downloadItem.container = "mp4"
+                    standardBadge?.text = "MP4"
                 }
+
+                renderVideoCapsules(view)
                 view.findViewById<LinearLayout>(R.id.adjust).apply {
                     visibility = if (shownFields.contains("adjust_video")) View.VISIBLE else View.GONE
                     if (isVisible){
@@ -552,6 +599,9 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
         }
     }
 
+    fun getDownloadItemOrNull(): DownloadItem? =
+        if (::downloadItem.isInitialized) downloadItem else null
+
     override fun updateTitleAuthor(t: String, a: String){
         downloadItem.title = t
         downloadItem.author = a
@@ -575,6 +625,7 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
                     isClickable = updating
                     setOnClickListener { formatViewModel.cancelUpdateFormats() }
                 }
+                view?.findViewById<LinearProgressIndicator>(R.id.video_capsules_loading)?.isVisible = updating
             }
         }
 
@@ -609,6 +660,96 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
             showSize = downloadItem.downloadSections.isEmpty()
         )
         formatViewModel.checkFreeSpace(filesize, downloadItem.downloadPath)
+        view?.let { renderVideoCapsules(it) }
+    }
+
+    private fun renderVideoCapsules(rootView: View, applySelection: Boolean = true) {
+        if (!isAdded || !::downloadItem.isInitialized) return
+        val chipGroup = rootView.findViewById<ChipGroup>(R.id.video_resolution_capsules) ?: return
+        val summaryText = rootView.findViewById<TextView>(R.id.video_selected_summary)
+        val formatCard = rootView.findViewById<MaterialCardView>(R.id.format_card_constraintLayout)
+
+        val capsules = QualityCapsuleUtil.buildVideoResolutionCapsules(downloadItem.allFormats)
+        chipGroup.removeAllViews()
+        if (capsules.isEmpty()) return
+
+        val currentHeightBucket = QualityCapsuleUtil.bucketResolution(
+            QualityCapsuleUtil.resolveEffectiveResolutionHeight(downloadItem.format)
+        ).first
+
+        val selectedCapsule = capsules.firstOrNull {
+            it.videoFormat.format_id == downloadItem.format.format_id
+        } ?: capsules.firstOrNull {
+            currentHeightBucket > 0 && it.height == currentHeightBucket
+        } ?: capsules.firstOrNull {
+            it.height in 1..1080
+        } ?: capsules.first()
+
+        val radiusPx = 20f * resources.displayMetrics.density
+        capsules.forEach { capsule ->
+            val fpsPart = if (capsule.fpsLabel.isNotEmpty()) " ${capsule.fpsLabel}" else ""
+            val sizeStr = QualityCapsuleUtil.formatCompactSize(capsule.estimatedBytes)
+            val labelText = if (sizeStr.isNotEmpty()) {
+                "${capsule.label}$fpsPart · $sizeStr"
+            } else {
+                "${capsule.label}$fpsPart"
+            }
+
+            val chip = Chip(requireContext()).apply {
+                id = View.generateViewId()
+                text = labelText
+                contentDescription = getString(R.string.select_option_desc, labelText)
+                isCheckable = true
+                isCheckedIconVisible = false
+                chipCornerRadius = radiusPx
+                isChecked = capsule == selectedCapsule
+                setOnClickListener {
+                    applyVideoCapsule(capsule, summaryText, formatCard)
+                }
+            }
+            chipGroup.addView(chip)
+        }
+
+        if (applySelection) {
+            applyVideoCapsule(selectedCapsule, summaryText, formatCard)
+        } else {
+            val containerUpper = downloadItem.container.ifBlank { "MP4" }.uppercase()
+            summaryText?.text = "${selectedCapsule.label} · $containerUpper"
+        }
+    }
+
+    private fun applyVideoCapsule(
+        capsule: QualityCapsuleUtil.VideoCapsule,
+        summaryText: TextView?,
+        formatCard: MaterialCardView?
+    ) {
+        downloadItem.format = capsule.videoFormat
+        downloadItem.videoPreferences.audioFormatIDs.clear()
+        capsule.pairedAudioFormat?.let {
+            downloadItem.videoPreferences.audioFormatIDs.add(it.format_id)
+        }
+        val sizeStr = QualityCapsuleUtil.formatCompactSize(capsule.estimatedBytes)
+        val containerUpper = downloadItem.container.ifBlank { "MP4" }.uppercase()
+        summaryText?.text = if (sizeStr.isNotEmpty()) {
+            "${capsule.label} · $containerUpper · $sizeStr"
+        } else {
+            "${capsule.label} · $containerUpper"
+        }
+        if (formatCard != null) {
+            val audioList = if (downloadItem.videoPreferences.removeAudio) {
+                emptyList()
+            } else {
+                listOfNotNull(capsule.pairedAudioFormat)
+            }
+            val totalSize = UiUtil.populateFormatCard(
+                requireContext(),
+                formatCard,
+                downloadItem.format,
+                audioList,
+                showSize = downloadItem.downloadSections.isEmpty()
+            )
+            formatViewModel.checkFreeSpace(totalSize, downloadItem.downloadPath)
+        }
     }
 
     override fun updateUI(res: ResultItem?) {
