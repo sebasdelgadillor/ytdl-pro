@@ -34,6 +34,7 @@ import com.deniscerri.ytdl.database.viewmodel.ResultViewModel
 import com.deniscerri.ytdl.database.viewmodel.YTDLPViewModel
 import com.deniscerri.ytdl.util.AccessibilityUtil
 import com.deniscerri.ytdl.util.BrowserMediaUtil
+import com.deniscerri.ytdl.util.DownloadPresetManager
 import com.deniscerri.ytdl.util.Extensions.applyFilenameTemplateForCuts
 import com.deniscerri.ytdl.util.Extensions.createBadge
 import com.deniscerri.ytdl.util.FileUtil
@@ -78,6 +79,7 @@ class DownloadAudioFragment(private var resultItem: ResultItem? = null, private 
     private var disabledCutClicked: Boolean = false
     private var observingFormatUpdates = false
     private var selectedThumbnailPrefs: Pair<Boolean, Boolean?>? = null
+    private var activePreset: DownloadPresetManager.DownloadPreset? = null
 
     @SuppressLint("RestrictedApi")
     override fun onCreateView(
@@ -452,6 +454,8 @@ class DownloadAudioFragment(private var resultItem: ResultItem? = null, private 
             }
             super.onViewCreated(view, savedInstanceState)
 
+            activePreset?.let { applyPresetToCurrentView(view, it) }
+
             view.findViewById<Chip>(R.id.cut).apply {
                 if (this.isEnabled && savedInstanceState?.containsKey("click_cut") == true) {
                     this.performClick()
@@ -536,7 +540,64 @@ class DownloadAudioFragment(private var resultItem: ResultItem? = null, private 
         val formatCard = view?.findViewById<MaterialCardView>(R.id.format_card_constraintLayout) ?: return
         val filesize = UiUtil.populateFormatCard(requireContext(), formatCard, preferredFormat, null, showSize = downloadItem.downloadSections.isEmpty())
         formatViewModel.checkFreeSpace(filesize, downloadItem.downloadPath)
-        view?.let { renderAudioCapsules(it) }
+        view?.let {
+            renderAudioCapsules(it)
+            activePreset?.let { preset -> applyPresetToCurrentView(it, preset) }
+        }
+    }
+
+    fun applyQuickPreset(preset: DownloadPresetManager.DownloadPreset) {
+        activePreset = preset
+        val root = view
+        if (isAdded && root != null && ::downloadItem.isInitialized) {
+            applyPresetToCurrentView(root, preset)
+        }
+    }
+
+    fun captureCurrentAsPreset(name: String): DownloadPresetManager.DownloadPreset? {
+        if (!::downloadItem.isInitialized) return null
+        val kbps = downloadItem.audioPreferences.bitrate
+            .replace(Regex("[^0-9]"), "")
+            .toIntOrNull() ?: 192
+        return DownloadPresetManager.DownloadPreset(
+            id = "custom_${System.currentTimeMillis()}",
+            name = name.trim(),
+            type = "audio",
+            container = downloadItem.container.ifBlank { "mp3" },
+            audioBitrateKbps = kbps,
+            embedThumbnail = downloadItem.audioPreferences.embedThumb,
+            customPath = downloadItem.downloadPath,
+            isBuiltIn = false
+        )
+    }
+
+    private fun applyPresetToCurrentView(rootView: View, preset: DownloadPresetManager.DownloadPreset) {
+        if (!isAdded || !::downloadItem.isInitialized) return
+        val ext = preset.container.ifBlank { "mp3" }.lowercase()
+        val kbps = preset.audioBitrateKbps.takeIf { it > 0 } ?: 192
+        downloadItem.container = ext
+        downloadItem.audioPreferences.bitrate = "${kbps}k"
+        downloadItem.audioPreferences.embedThumb = if (ext == "wav") false else preset.embedThumbnail
+        if (preset.customPath.isNotBlank() && ::saveDir.isInitialized) {
+            setDownloadPath(preset.customPath)
+        }
+
+        val containerTv = rootView.findViewById<AutoCompleteTextView>(R.id.container_textview)
+        val audioBadge = rootView.findViewById<TextView>(R.id.audio_standard_badge)
+        containerTv?.setText(ext.ifEmpty { getString(R.string.defaultValue) }, false)
+        audioBadge?.text = ext.ifBlank { "MP3" }.uppercase()
+
+        rootView.findViewById<Chip>(R.id.thumbnail)?.apply {
+            isEnabled = ext != "wav"
+            createBadge(
+                requireContext(),
+                listOf(downloadItem.audioPreferences.embedThumb, downloadItem.audioPreferences.cropThumb).count { it == true }
+            )
+        }
+        rootView.findViewById<Chip>(R.id.audio_bitrate)?.text =
+            "${getString(R.string.bitrate)} (${downloadItem.audioPreferences.bitrate})"
+
+        renderAudioCapsules(rootView)
     }
 
     private fun renderAudioCapsules(rootView: View) {

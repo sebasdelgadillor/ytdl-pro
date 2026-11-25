@@ -96,6 +96,9 @@ interface HistoryDao {
     @Query("SELECT url FROM history WHERE id in (:ids)")
     fun getURLsFromIDs(ids: List<Long>) : List<String>
 
+    @Query("SELECT DISTINCT url FROM history WHERE url != ''")
+    fun getAllUrls() : List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(item: HistoryItem)
 

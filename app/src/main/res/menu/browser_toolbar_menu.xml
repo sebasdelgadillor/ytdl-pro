@@ -10,6 +10,9 @@
         android:id="@+id/menu_browser_detect_media"
         android:title="@string/browser_media_options" />
     <item
+        android:id="@+id/menu_browser_batch_select"
+        android:title="@string/browser_batch_select_title" />
+    <item
         android:id="@+id/menu_browser_focus_web"
         android:title="@string/browser_focus_page_content" />
     <item

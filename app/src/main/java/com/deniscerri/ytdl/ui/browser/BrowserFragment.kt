@@ -3,8 +3,11 @@ package com.deniscerri.ytdl.ui.browser
 import android.annotation.SuppressLint
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Message
@@ -48,11 +51,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.webkit.UserAgentMetadata
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 import com.deniscerri.ytdl.MainActivity
 import com.deniscerri.ytdl.R
+import com.deniscerri.ytdl.database.DBManager
 import com.deniscerri.ytdl.database.enums.DownloadType
 import com.deniscerri.ytdl.database.models.DownloadItem
 import com.deniscerri.ytdl.database.models.ResultItem
@@ -64,8 +70,10 @@ import com.deniscerri.ytdl.util.AccessibilityUtil
 import com.deniscerri.ytdl.util.BrowserMediaUtil
 import com.deniscerri.ytdl.util.BrowserScriptLoader
 import com.deniscerri.ytdl.util.DomainUtil
+import com.deniscerri.ytdl.util.DownloadPresetManager
 import com.deniscerri.ytdl.util.Extensions.isYoutubeURL
 import com.deniscerri.ytdl.util.ImageDownloadHelper
+import com.deniscerri.ytdl.util.MediaHistoryMatcher
 import com.deniscerri.ytdl.util.QualityCapsuleUtil
 import com.deniscerri.ytdl.util.SiteSessionManager
 import com.deniscerri.ytdl.util.UiUtil
@@ -81,6 +89,7 @@ import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -114,6 +123,7 @@ class BrowserFragment : Fragment() {
     private lateinit var emptyState: LinearLayout
     private lateinit var downloadFab: MaterialButton
     private lateinit var pageMediaBtn: MaterialButton
+    private lateinit var batchSelectBtn: MaterialButton
 
     private lateinit var mediaContextBar: MaterialCardView
     private lateinit var mediaContextThumb: ImageView
@@ -147,6 +157,8 @@ class BrowserFragment : Fragment() {
 
     private val detectedMedia = ConcurrentHashMap<String, FallbackMediaRules.MediaCandidate>()
     private val detectedImages = ConcurrentHashMap<String, DetectedImageEntry>()
+    private val scannedItemsByProfile = LinkedHashMap<String, LinkedHashMap<String, ScannedPageMediaItem>>()
+    private var highlightRefreshJob: Job? = null
 
     @Volatile
     private var currentPageUrl: String = ""
@@ -224,6 +236,17 @@ class BrowserFragment : Fragment() {
         val thumbUrl: String = ""
     )
 
+    private data class ScannedPageMediaItem(
+        val key: String,
+        val url: String,
+        val title: String,
+        val thumb: String,
+        val duration: String,
+        val author: String,
+        val isVideo: Boolean,
+        val state: MediaHistoryMatcher.MediaDownloadState = MediaHistoryMatcher.MediaDownloadState.NEW
+    )
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -252,6 +275,7 @@ class BrowserFragment : Fragment() {
         emptyState = view.findViewById(R.id.browser_empty_state)
         downloadFab = view.findViewById(R.id.fab_browser_download)
         pageMediaBtn = view.findViewById(R.id.btn_browser_page_media)
+        batchSelectBtn = view.findViewById(R.id.btn_browser_batch_select)
         webView = view.findViewById(R.id.browser_webview)
 
         mediaContextBar = view.findViewById(R.id.browser_media_context_bar)
@@ -533,6 +557,7 @@ class BrowserFragment : Fragment() {
                         setUrlInputQuietly(url)
                         browserViewModel.setCurrentUrl(url)
                         updateDownloadFabLabel()
+                        refreshDownloadedHighlightsOnPage(delayMs = 700L)
                     }
                 }
 
@@ -601,6 +626,7 @@ class BrowserFragment : Fragment() {
 
                     runCatching { CookieManager.getInstance().flush() }
                     inspectPageAndSyncSession(view, url, forceSave = false)
+                    refreshDownloadedHighlightsOnPage(delayMs = 900L)
                 }
 
                 override fun shouldOverrideUrlLoading(
@@ -677,6 +703,9 @@ class BrowserFragment : Fragment() {
         }
         if (pageMediaBtn.isVisible != loaded) {
             pageMediaBtn.isVisible = loaded
+        }
+        if (batchSelectBtn.isVisible != loaded) {
+            batchSelectBtn.isVisible = loaded
         }
         val showDot = loaded && hasSavedSession
         if (sessionDot.isVisible != showDot) {
@@ -1052,6 +1081,7 @@ class BrowserFragment : Fragment() {
             popup.menu.findItem(R.id.menu_browser_toggle_app_bar)?.isChecked = browserViewModel.showAppNavBar.value
             popup.menu.findItem(R.id.menu_browser_desktop)?.isChecked = browserViewModel.desktopMode.value
             popup.menu.findItem(R.id.menu_browser_detect_media)?.isEnabled = hasHttpUrl
+            popup.menu.findItem(R.id.menu_browser_batch_select)?.isEnabled = hasHttpUrl
             popup.menu.findItem(R.id.menu_browser_focus_web)?.isEnabled = hasHttpUrl
             popup.menu.findItem(R.id.menu_browser_save_session)?.apply {
                 isEnabled = hasHttpUrl
@@ -1092,6 +1122,10 @@ class BrowserFragment : Fragment() {
                     }
                     R.id.menu_browser_detect_media -> {
                         if (hasHttpUrl) openContextMenuFromFocusedOrViewport()
+                        true
+                    }
+                    R.id.menu_browser_batch_select -> {
+                        if (hasHttpUrl) openChannelMultiSelectSheet()
                         true
                     }
                     R.id.menu_browser_focus_web -> {
@@ -1165,6 +1199,10 @@ class BrowserFragment : Fragment() {
 
         pageMediaBtn.setOnClickListener {
             openContextMenuFromFocusedOrViewport()
+        }
+
+        batchSelectBtn.setOnClickListener {
+            openChannelMultiSelectSheet()
         }
 
         downloadFab.setOnClickListener {
@@ -1325,11 +1363,7 @@ class BrowserFragment : Fragment() {
     private fun parseIconList(rawJson: String?): List<String> {
         if (rawJson.isNullOrBlank() || rawJson == "null") return emptyList()
         return runCatching {
-            val unescaped = if (rawJson.startsWith("\"")) {
-                org.json.JSONTokener(rawJson).nextValue().toString()
-            } else {
-                rawJson
-            }
+            val unescaped = unescapeJsJsonString(rawJson) ?: return@runCatching emptyList()
             val obj = JSONObject(unescaped)
             val arr: JSONArray = obj.optJSONArray("icons") ?: return@runCatching emptyList()
             val list = mutableListOf<String>()
@@ -1742,6 +1776,13 @@ class BrowserFragment : Fragment() {
             }
         }
 
+        val cachedPageItemsCount = scannedItemsByProfile[buildProfileScopeKey(currentUrl)]?.size ?: 0
+        if (cachedPageItemsCount >= 2) {
+            addActionButton(getString(R.string.context_batch_select_page, cachedPageItemsCount), R.drawable.ic_select_all) {
+                openChannelMultiSelectSheet()
+            }
+        }
+
         val canonicalPostCopy = BrowserMediaUtil.canonicalizePermalinkUrl(hit.postUrl)
             .takeIf { it.startsWith("http") && BrowserMediaUtil.scorePermalinkCandidate(it) >= 0 }
         val canonicalCurrentCopy = BrowserMediaUtil.canonicalizePermalinkUrl(currentUrl)
@@ -2121,12 +2162,14 @@ class BrowserFragment : Fragment() {
             when {
                 queueRes.message.isNotBlank() ->
                     Toast.makeText(requireContext(), queueRes.message, Toast.LENGTH_LONG).show()
-                queuedCount > 0 ->
+                queuedCount > 0 -> {
                     Toast.makeText(
                         requireContext(),
                         getString(R.string.batch_download_started, queuedCount),
                         Toast.LENGTH_SHORT
                     ).show()
+                    refreshDownloadedHighlightsOnPage(delayMs = 250L)
+                }
             }
         }
     }
@@ -2222,8 +2265,10 @@ class BrowserFragment : Fragment() {
             when {
                 queueRes.message.isNotBlank() ->
                     Toast.makeText(requireContext(), queueRes.message, Toast.LENGTH_LONG).show()
-                queueRes.duplicateDownloadIDs.isEmpty() ->
+                queueRes.duplicateDownloadIDs.isEmpty() -> {
                     Toast.makeText(requireContext(), R.string.image_download_started, Toast.LENGTH_SHORT).show()
+                    refreshDownloadedHighlightsOnPage(delayMs = 250L)
+                }
             }
         }
     }
@@ -2252,8 +2297,10 @@ class BrowserFragment : Fragment() {
             when {
                 queueRes.message.isNotBlank() ->
                     Toast.makeText(requireContext(), queueRes.message, Toast.LENGTH_LONG).show()
-                queueRes.duplicateDownloadIDs.isEmpty() ->
+                queueRes.duplicateDownloadIDs.isEmpty() -> {
                     Toast.makeText(requireContext(), R.string.browser_quick_download_started, Toast.LENGTH_SHORT).show()
+                    refreshDownloadedHighlightsOnPage(delayMs = 250L)
+                }
             }
         }
     }
@@ -2405,11 +2452,7 @@ class BrowserFragment : Fragment() {
     private fun parseHitMediaResult(rawJson: String?, seqId: Long): HitMediaResult {
         if (rawJson.isNullOrBlank() || rawJson == "null") return HitMediaResult(seqId = seqId)
         return runCatching {
-            val unescaped = if (rawJson.startsWith("\"")) {
-                org.json.JSONTokener(rawJson).nextValue().toString()
-            } else {
-                rawJson
-            }
+            val unescaped = unescapeJsJsonString(rawJson) ?: return HitMediaResult(seqId = seqId)
             val obj = JSONObject(unescaped)
 
             val pointVideos = mutableListOf<String>()
@@ -2469,6 +2512,743 @@ class BrowserFragment : Fragment() {
         }.getOrDefault(HitMediaResult(seqId = seqId))
     }
 
+    private fun unescapeJsJsonString(rawJson: String?): String? {
+        if (rawJson.isNullOrBlank() || rawJson == "null") return null
+        return if (rawJson.startsWith("\"")) {
+            org.json.JSONTokener(rawJson).nextValue().toString()
+        } else {
+            rawJson
+        }
+    }
+
+    private fun buildProfileScopeKey(url: String): String {
+        val uri = runCatching { URI(url.trim()) }.getOrNull() ?: return url
+        val host = uri.host?.lowercase(Locale.US)
+            ?.removePrefix("www.")
+            ?.removePrefix("m.")
+            ?.removePrefix("mobile.")
+            .orEmpty()
+        if (host.isBlank()) return url
+        val segments = uri.rawPath.orEmpty().split('/').filter { it.isNotBlank() }
+        if (host == "youtube.com") {
+            val first = segments.firstOrNull()?.lowercase(Locale.US).orEmpty()
+            if (first == "results" || first == "playlist") {
+                return "$host/$first?${uri.rawQuery.orEmpty()}"
+            }
+        }
+        return "$host/${segments.take(2).joinToString("/")}"
+    }
+
+    private suspend fun loadMediaHistoryIndex(appCtx: Context): MediaHistoryMatcher.MediaHistoryIndex =
+        withContext(Dispatchers.IO) {
+            val db = DBManager.getInstance(appCtx)
+            MediaHistoryMatcher.MediaHistoryIndex(
+                downloadedUrls = db.historyDao.getAllUrls(),
+                inProgressUrls = db.downloadDao.getInProgressUrls()
+            )
+        }
+
+    private suspend fun scanRawPageMediaItems(wv: WebView, ctx: Context): List<ScannedPageMediaItem> {
+        val script = BrowserScriptLoader.buildChannelScannerScript(ctx)
+        return suspendCancellableCoroutine { cont ->
+            val call = runCatching {
+                wv.evaluateJavascript(script) { raw ->
+                    if (!cont.isActive) return@evaluateJavascript
+                    cont.resume(parseScannedPageMediaItems(raw))
+                }
+            }
+            if (call.isFailure && cont.isActive) {
+                cont.resume(emptyList())
+            }
+        }
+    }
+
+    private fun parseScannedPageMediaItems(rawJson: String?): List<ScannedPageMediaItem> {
+        val unescaped = runCatching { unescapeJsJsonString(rawJson) }.getOrNull() ?: return emptyList()
+        return runCatching {
+            val obj = JSONObject(unescaped)
+            val pageAuthor = obj.optString("pageAuthor").trim()
+            val arr = obj.optJSONArray("items") ?: return@runCatching emptyList()
+            val out = ArrayList<ScannedPageMediaItem>(arr.length())
+            for (i in 0 until arr.length()) {
+                val itemObj = arr.optJSONObject(i) ?: continue
+                val url = itemObj.optString("url").trim()
+                if (!url.startsWith("http")) continue
+                val key = itemObj.optString("key").trim().ifBlank { MediaHistoryMatcher.primaryMediaKey(url) }
+                out.add(
+                    ScannedPageMediaItem(
+                        key = key,
+                        url = url,
+                        title = itemObj.optString("title").trim(),
+                        thumb = itemObj.optString("thumb").trim(),
+                        duration = itemObj.optString("duration").trim(),
+                        author = itemObj.optString("author").trim().ifBlank { pageAuthor },
+                        isVideo = itemObj.optBoolean("isVideo", true)
+                    )
+                )
+            }
+            out
+        }.getOrDefault(emptyList())
+    }
+
+    private fun mergeScannedBucket(
+        currentUrl: String,
+        freshItems: List<ScannedPageMediaItem>
+    ): LinkedHashMap<String, ScannedPageMediaItem> {
+        val profileKey = buildProfileScopeKey(currentUrl)
+        val bucket = scannedItemsByProfile.getOrPut(profileKey) { LinkedHashMap() }
+        freshItems.forEach { item ->
+            val prev = bucket[item.key]
+            bucket[item.key] = if (prev == null) item else item.copy(
+                title = item.title.ifBlank { prev.title },
+                thumb = item.thumb.ifBlank { prev.thumb },
+                duration = item.duration.ifBlank { prev.duration },
+                author = item.author.ifBlank { prev.author }
+            )
+        }
+        while (scannedItemsByProfile.size > MAX_CACHED_PROFILES) {
+            val oldestKey = scannedItemsByProfile.keys.firstOrNull() ?: break
+            scannedItemsByProfile.remove(oldestKey)
+        }
+        return bucket
+    }
+
+    private suspend fun scanCurrentPageMediaItems(): List<ScannedPageMediaItem> {
+        val wv = webView ?: return emptyList()
+        val ctx = context?.applicationContext ?: return emptyList()
+        val currentUrl = wv.url?.takeIf { it.startsWith("http") } ?: currentPageUrl
+        val freshItems = scanRawPageMediaItems(wv, ctx)
+        val bucket = mergeScannedBucket(currentUrl, freshItems)
+
+        val combined = bucket.values.toList().ifEmpty { freshItems }
+        if (combined.isEmpty()) return emptyList()
+        val index = loadMediaHistoryIndex(ctx)
+        return combined.map { it.copy(state = index.getState(it.url)) }
+    }
+
+    private fun refreshDownloadedHighlightsOnPage(delayMs: Long = 0L) {
+        if (!isAdded) return
+        highlightRefreshJob?.cancel()
+        highlightRefreshJob = viewLifecycleOwner.lifecycleScope.launch {
+            if (delayMs > 0L) delay(delayMs)
+            val wv = webView ?: return@launch
+            val ctx = context?.applicationContext ?: return@launch
+            if (!isAdded || !wv.isVisible) return@launch
+            val currentUrl = wv.url?.takeIf { it.startsWith("http") } ?: currentPageUrl
+            if (!currentUrl.startsWith("http")) return@launch
+
+            val freshItems = scanRawPageMediaItems(wv, ctx)
+            if (freshItems.isNotEmpty()) {
+                mergeScannedBucket(currentUrl, freshItems)
+            }
+            val candidateUrls = (freshItems.map { it.url } + listOf(currentUrl)).distinct()
+            val index = loadMediaHistoryIndex(ctx)
+            val (downloadedKeys, inProgressKeys) = index.matchedKeysFor(candidateUrls)
+
+            val script = BrowserScriptLoader.buildHighlightDownloadedScript(
+                context = ctx,
+                downloadedKeys = downloadedKeys,
+                inProgressKeys = inProgressKeys,
+                downloadedLabel = getString(R.string.browser_badge_downloaded),
+                inProgressLabel = getString(R.string.browser_badge_in_progress)
+            )
+            wv.evaluateJavascript(script, null)
+        }
+    }
+
+    private fun openChannelMultiSelectSheet() {
+        val currentUrl = webView?.url?.takeIf { it.startsWith("http") } ?: browserViewModel.currentUrl.value
+        if (currentUrl.isNullOrBlank() || !currentUrl.startsWith("http")) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val scanned = scanCurrentPageMediaItems()
+            if (!isAdded) return@launch
+            if (scanned.isEmpty()) {
+                val hit = inspectMediaAtPoint(-1f, -1f, ++touchSeq)
+                val postGallery = collectPostGalleryItems(hit, currentUrl)
+                if (postGallery.size > 1) {
+                    showAllDetectedMediaSheet(postGallery, currentUrl)
+                } else {
+                    Toast.makeText(requireContext(), R.string.browser_batch_select_empty, Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+            refreshDownloadedHighlightsOnPage(delayMs = 0L)
+            showChannelMultiSelectSheet(currentUrl, scanned)
+        }
+    }
+
+    private fun showChannelMultiSelectSheet(
+        initialUrl: String,
+        initialItems: List<ScannedPageMediaItem>
+    ) {
+        if (!isAdded) return
+        val ctx = requireContext()
+        activeContextDialog?.dismiss()
+        val dialog = BottomSheetDialog(ctx)
+        activeContextDialog = dialog
+
+        val density = resources.displayMetrics.density
+        fun dp(v: Int): Int = (v * density).toInt()
+        val primaryColor = MaterialColors.getColor(
+            ctx,
+            androidx.appcompat.R.attr.colorPrimary,
+            0xFF6750A4.toInt()
+        )
+        val rippleTyped = TypedValue()
+        ctx.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, rippleTyped, true)
+
+        var allItems = initialItems
+        val selectedKeys = linkedSetOf<String>()
+        var onlyNewFilter = false
+        var selectedPresetId = DownloadPresetManager.getLastUsedBatchPresetId(ctx)
+        val allPresets = DownloadPresetManager.getAllPresets(ctx)
+
+        val outer = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(14))
+        }
+
+        val headerRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val headerTitle = TextView(ctx).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTypeface(typeface, Typeface.BOLD)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        AccessibilityUtil.setHeading(headerTitle, true)
+        headerRow.addView(headerTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        val rescanBtn = ImageButton(ctx).apply {
+            setImageResource(R.drawable.ic_refresh)
+            if (rippleTyped.resourceId != 0) setBackgroundResource(rippleTyped.resourceId)
+            contentDescription = getString(R.string.browser_batch_rescan_desc)
+        }
+        headerRow.addView(rescanBtn, LinearLayout.LayoutParams(dp(40), dp(40)))
+        outer.addView(headerRow)
+
+        val summaryRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(2), 0, dp(6))
+        }
+        val summaryTv = TextView(ctx).apply {
+            alpha = 0.78f
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            maxLines = 2
+        }
+        summaryRow.addView(summaryTv, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        val selectedCountTv = TextView(ctx).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(primaryColor)
+            setPadding(dp(8), 0, 0, 0)
+        }
+        summaryRow.addView(selectedCountTv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        outer.addView(summaryRow)
+
+        val controlsRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(6))
+        }
+        val radiusPx = 18f * density
+        val onlyNewChip = Chip(ctx).apply {
+            text = getString(R.string.browser_batch_only_new)
+            contentDescription = getString(R.string.browser_batch_only_new)
+            isCheckable = true
+            isChecked = false
+            chipCornerRadius = radiusPx
+            AccessibilityUtil.setStateDescription(this, getString(R.string.state_unselected))
+        }
+        controlsRow.addView(onlyNewChip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        controlsRow.addView(
+            View(ctx).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO },
+            LinearLayout.LayoutParams(0, 1, 1f)
+        )
+
+        val btnSelectNew = MaterialButton(
+            ctx,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            text = getString(R.string.browser_batch_select_new)
+            minHeight = dp(38)
+            maxLines = 1
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+        }
+        controlsRow.addView(btnSelectNew, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        outer.addView(controlsRow)
+
+        val presetsScroll = HorizontalScrollView(ctx).apply {
+            isHorizontalScrollBarEnabled = false
+            setPadding(0, 0, 0, dp(8))
+        }
+        val presetGroup = ChipGroup(ctx).apply {
+            isSingleSelection = true
+            isSelectionRequired = true
+            isSingleLine = true
+        }
+        val autoChip = Chip(ctx).apply {
+            id = View.generateViewId()
+            tag = DownloadPresetManager.AUTO_BATCH_PRESET_ID
+            text = getString(R.string.preset_auto)
+            contentDescription = getString(R.string.select_option_desc, getString(R.string.preset_auto))
+            isCheckable = true
+            isCheckedIconVisible = false
+            chipCornerRadius = radiusPx
+            isChecked = selectedPresetId == DownloadPresetManager.AUTO_BATCH_PRESET_ID
+            setOnClickListener {
+                selectedPresetId = DownloadPresetManager.AUTO_BATCH_PRESET_ID
+                DownloadPresetManager.setLastUsedBatchPresetId(ctx, selectedPresetId)
+            }
+        }
+        presetGroup.addView(autoChip)
+
+        allPresets.forEach { preset ->
+            val chip = Chip(ctx).apply {
+                id = View.generateViewId()
+                tag = preset.id
+                text = preset.name
+                contentDescription = getString(R.string.preset_apply_desc, preset.name)
+                isCheckable = true
+                isCheckedIconVisible = false
+                chipCornerRadius = radiusPx
+                isChecked = selectedPresetId == preset.id
+                setOnClickListener {
+                    selectedPresetId = preset.id
+                    DownloadPresetManager.setLastUsedBatchPresetId(ctx, selectedPresetId)
+                }
+            }
+            presetGroup.addView(chip)
+        }
+        if (presetGroup.checkedChipId == View.NO_ID) {
+            autoChip.isChecked = true
+            selectedPresetId = DownloadPresetManager.AUTO_BATCH_PRESET_ID
+        }
+        presetsScroll.addView(presetGroup)
+        outer.addView(presetsScroll)
+
+        lateinit var syncBatchUi: () -> Unit
+        val adapter = ChannelBatchAdapter(
+            dialog = dialog,
+            pageRefererUrl = initialUrl,
+            primaryColor = primaryColor,
+            rippleResId = rippleTyped.resourceId,
+            onToggleItem = { media ->
+                if (media.key in selectedKeys) selectedKeys.remove(media.key) else selectedKeys.add(media.key)
+                syncBatchUi()
+            },
+            onOpenSingleOptions = { media ->
+                dialog.dismiss()
+                val singleHit = HitMediaResult(
+                    seqId = ++touchSeq,
+                    imageUrl = if (!media.isVideo) media.thumb else "",
+                    postUrl = media.url,
+                    pageTitle = media.title,
+                    pageThumb = media.thumb,
+                    hasVideoElement = media.isVideo
+                )
+                openUnifiedDownloadSheet(singleHit, preferredType = null)
+            }
+        )
+
+        val recycler = RecyclerView(ctx).apply {
+            layoutManager = LinearLayoutManager(ctx)
+            this.adapter = adapter
+        }
+        val listHeightPx = (resources.displayMetrics.heightPixels * 0.36f).toInt().coerceIn(dp(180), dp(290))
+        outer.addView(recycler, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, listHeightPx))
+
+        val footerRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, 0)
+        }
+        val btnAdvanced = MaterialButton(
+            ctx,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            text = getString(R.string.browser_batch_advanced)
+            isEnabled = false
+            minimumHeight = dp(48)
+        }
+        val btnDownloadSelected = MaterialButton(ctx).apply {
+            text = getString(R.string.gallery_download_selected, 0)
+            isEnabled = false
+            minimumHeight = dp(48)
+        }
+        footerRow.addView(btnAdvanced, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            marginEnd = dp(8)
+        })
+        footerRow.addView(btnDownloadSelected, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        outer.addView(footerRow)
+
+        syncBatchUi = {
+            val newCount = allItems.count { it.state == MediaHistoryMatcher.MediaDownloadState.NEW }
+            val dlCount = allItems.count { it.state == MediaHistoryMatcher.MediaDownloadState.DOWNLOADED }
+            val progCount = allItems.count { it.state == MediaHistoryMatcher.MediaDownloadState.IN_PROGRESS }
+            headerTitle.text = "${getString(R.string.browser_batch_select_title)} (${allItems.size})"
+            summaryTv.text = getString(R.string.browser_batch_summary, newCount, dlCount, progCount)
+
+            val displayed = if (onlyNewFilter) {
+                allItems.filter { it.state == MediaHistoryMatcher.MediaDownloadState.NEW }
+            } else {
+                allItems
+            }
+            adapter.submit(displayed, selectedKeys)
+
+            val selCount = selectedKeys.size
+            selectedCountTv.text = getString(R.string.gallery_selected_count, selCount)
+            btnDownloadSelected.text = getString(R.string.gallery_download_selected, selCount)
+            btnDownloadSelected.isEnabled = selCount > 0
+            btnAdvanced.isEnabled = selCount > 0
+
+            val selectableNewKeys = displayed.filter { it.state == MediaHistoryMatcher.MediaDownloadState.NEW }.map { it.key }
+            val allNewSelected = selectableNewKeys.isNotEmpty() && selectableNewKeys.all { it in selectedKeys }
+            btnSelectNew.setText(if (allNewSelected) R.string.gallery_clear_selection else R.string.browser_batch_select_new)
+            btnSelectNew.isEnabled = selectableNewKeys.isNotEmpty() || selectedKeys.isNotEmpty()
+        }
+
+        onlyNewChip.setOnCheckedChangeListener { _, isChecked ->
+            onlyNewFilter = isChecked
+            AccessibilityUtil.setStateDescription(
+                onlyNewChip,
+                getString(if (isChecked) R.string.state_selected else R.string.state_unselected)
+            )
+            syncBatchUi()
+        }
+
+        btnSelectNew.setOnClickListener {
+            val displayed = if (onlyNewFilter) {
+                allItems.filter { it.state == MediaHistoryMatcher.MediaDownloadState.NEW }
+            } else {
+                allItems
+            }
+            val selectableNewKeys = displayed.filter { it.state == MediaHistoryMatcher.MediaDownloadState.NEW }.map { it.key }
+            val allNewSelected = selectableNewKeys.isNotEmpty() && selectableNewKeys.all { it in selectedKeys }
+            if (allNewSelected) {
+                selectedKeys.removeAll(selectableNewKeys.toSet())
+            } else if (selectableNewKeys.isNotEmpty()) {
+                selectedKeys.addAll(selectableNewKeys)
+            } else {
+                selectedKeys.clear()
+            }
+            syncBatchUi()
+        }
+
+        rescanBtn.setOnClickListener {
+            viewLifecycleOwner.lifecycleScope.launch {
+                val rescanned = scanCurrentPageMediaItems()
+                if (!isAdded || !dialog.isShowing) return@launch
+                if (rescanned.isNotEmpty()) {
+                    allItems = rescanned
+                    val validKeys = allItems.map { it.key }.toSet()
+                    selectedKeys.retainAll(validKeys)
+                    syncBatchUi()
+                    refreshDownloadedHighlightsOnPage(delayMs = 0L)
+                }
+            }
+        }
+
+        btnDownloadSelected.setOnClickListener {
+            val chosen = allItems.filter { it.key in selectedKeys }
+            if (chosen.isEmpty()) return@setOnClickListener
+            val preset = allPresets.firstOrNull { it.id == selectedPresetId }
+            dialog.dismiss()
+            queueBatchScannedItems(chosen, preset, initialUrl)
+        }
+
+        btnAdvanced.setOnClickListener {
+            val chosen = allItems.filter { it.key in selectedKeys }
+            if (chosen.isEmpty()) return@setOnClickListener
+            val preset = allPresets.firstOrNull { it.id == selectedPresetId }
+            dialog.dismiss()
+            openBatchAdvancedSheet(chosen, preset, initialUrl)
+        }
+
+        syncBatchUi()
+        dialog.setContentView(outer)
+        dialog.setOnShowListener {
+            runCatching {
+                dialog.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+                dialog.behavior.skipCollapsed = true
+            }
+        }
+        dialog.show()
+    }
+
+    private suspend fun buildBatchDownloadItemsFromScanned(
+        appCtx: Context,
+        selected: List<ScannedPageMediaItem>,
+        preset: DownloadPresetManager.DownloadPreset?,
+        currentUrl: String
+    ): MutableList<DownloadItem> = withContext(Dispatchers.IO) {
+        runCatching { CookieManager.getInstance().flush() }
+        SiteSessionManager.prepareSessionContextForUrl(appCtx, currentUrl)
+        val items = mutableListOf<DownloadItem>()
+        selected.forEachIndexed { idx, media ->
+            SiteSessionManager.prepareSessionContextForUrl(appCtx, media.url)
+            val result = downloadViewModel.createEmptyResultItem(media.url).copy(
+                title = media.title.ifBlank { media.author.ifBlank { "Media" } },
+                author = media.author,
+                duration = media.duration,
+                thumb = media.thumb
+            )
+            val resolvedType = preset?.downloadType() ?: if (media.isVideo) {
+                DownloadType.video
+            } else {
+                downloadViewModel.getDownloadType(url = media.url)
+            }
+            val dwl = downloadViewModel.createDownloadItemFromResult(
+                result = result,
+                givenType = resolvedType
+            ).apply {
+                rowNumber = idx + 1
+                if (preset != null) {
+                    DownloadPresetManager.applyPresetToDownloadItem(this, preset)
+                }
+            }
+            items.add(dwl)
+        }
+        items
+    }
+
+    private fun queueBatchScannedItems(
+        selected: List<ScannedPageMediaItem>,
+        preset: DownloadPresetManager.DownloadPreset?,
+        currentUrl: String
+    ) {
+        val ctx = context?.applicationContext ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val items = buildBatchDownloadItemsFromScanned(ctx, selected, preset, currentUrl)
+            if (items.isEmpty()) return@launch
+            val allowDuplicates = selected.any { it.state != MediaHistoryMatcher.MediaDownloadState.NEW }
+            val queueRes = withContext(Dispatchers.IO) {
+                downloadViewModel.queueDownloads(items, ignoreDuplicates = allowDuplicates)
+            }
+            if (!isAdded) return@launch
+            val queuedCount = (items.size - queueRes.duplicateDownloadIDs.size).coerceAtLeast(0)
+            when {
+                queueRes.message.isNotBlank() ->
+                    Toast.makeText(requireContext(), queueRes.message, Toast.LENGTH_LONG).show()
+                queuedCount > 0 ->
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.batch_download_started, queuedCount),
+                        Toast.LENGTH_SHORT
+                    ).show()
+            }
+            refreshDownloadedHighlightsOnPage(delayMs = 250L)
+        }
+    }
+
+    private fun openBatchAdvancedSheet(
+        selected: List<ScannedPageMediaItem>,
+        preset: DownloadPresetManager.DownloadPreset?,
+        currentUrl: String
+    ) {
+        val ctx = context?.applicationContext ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val items = buildBatchDownloadItemsFromScanned(ctx, selected, preset, currentUrl)
+            if (items.isEmpty()) return@launch
+            downloadViewModel.insertToProcessing(items).join()
+            if (!isAdded) return@launch
+            runCatching {
+                findNavController().navigate(R.id.action_browserFragment_to_downloadMultipleBottomSheetDialog2)
+            }
+        }
+    }
+
+    private inner class ChannelBatchAdapter(
+        private val dialog: BottomSheetDialog,
+        private val pageRefererUrl: String,
+        private val primaryColor: Int,
+        private val rippleResId: Int,
+        private val onToggleItem: (ScannedPageMediaItem) -> Unit,
+        private val onOpenSingleOptions: (ScannedPageMediaItem) -> Unit
+    ) : RecyclerView.Adapter<ChannelBatchAdapter.BatchViewHolder>() {
+
+        private var items: List<ScannedPageMediaItem> = emptyList()
+        private var checkedKeys: Set<String> = emptySet()
+
+        fun submit(nextItems: List<ScannedPageMediaItem>, selected: Set<String>) {
+            items = nextItems
+            checkedKeys = selected.toSet()
+            notifyDataSetChanged()
+        }
+
+        override fun getItemCount(): Int = items.size
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BatchViewHolder {
+            val ctx = parent.context
+            val density = ctx.resources.displayMetrics.density
+            fun dp(v: Int): Int = (v * density).toInt()
+
+            val card = MaterialCardView(ctx).apply {
+                radius = dp(12).toFloat()
+                cardElevation = 0f
+                strokeColor = primaryColor
+                minimumHeight = dp(60)
+                setContentPadding(dp(8), dp(8), dp(6), dp(8))
+                isClickable = true
+                isFocusable = true
+                layoutParams = RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = dp(8)
+                }
+            }
+
+            val row = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val cb = CheckBox(ctx).apply {
+                isClickable = false
+                isFocusable = false
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+            row.addView(cb, LinearLayout.LayoutParams(dp(34), dp(34)))
+
+            val iv = ImageView(ctx).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                contentDescription = null
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+            row.addView(iv, LinearLayout.LayoutParams(dp(64), dp(46)))
+
+            val col = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(10), 0, dp(4), 0)
+            }
+            val titleTv = TextView(ctx).apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTypeface(typeface, Typeface.BOLD)
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            }
+            val metaRow = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(3), 0, 0)
+            }
+            val statusTv = TextView(ctx).apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(dp(7), dp(2), dp(7), dp(2))
+            }
+            val metaTv = TextView(ctx).apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                alpha = 0.72f
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                setPadding(dp(6), 0, 0, 0)
+            }
+            metaRow.addView(statusTv)
+            metaRow.addView(metaTv, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            col.addView(titleTv)
+            col.addView(metaRow)
+            row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+            val optionsBtn = ImageButton(ctx).apply {
+                setImageResource(R.drawable.ic_more)
+                if (rippleResId != 0) setBackgroundResource(rippleResId)
+            }
+            row.addView(optionsBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
+
+            card.addView(row)
+            return BatchViewHolder(card, cb, iv, titleTv, statusTv, metaTv, optionsBtn, density)
+        }
+
+        override fun onBindViewHolder(holder: BatchViewHolder, position: Int) {
+            holder.bind(items[position], position, items.size)
+        }
+
+        inner class BatchViewHolder(
+            private val card: MaterialCardView,
+            private val cb: CheckBox,
+            private val iv: ImageView,
+            private val titleTv: TextView,
+            private val statusTv: TextView,
+            private val metaTv: TextView,
+            private val optionsBtn: ImageButton,
+            private val density: Float
+        ) : RecyclerView.ViewHolder(card) {
+
+            fun bind(media: ScannedPageMediaItem, pos: Int, total: Int) {
+                val ctx = card.context
+                val isChecked = media.key in checkedKeys
+                cb.isChecked = isChecked
+                card.strokeWidth = if (isChecked) (2f * density).toInt() else 0
+
+                titleTv.text = media.title.ifBlank { media.url }
+                val (statusText, pillColor, textColor) = when (media.state) {
+                    MediaHistoryMatcher.MediaDownloadState.DOWNLOADED -> Triple(
+                        ctx.getString(R.string.browser_batch_status_downloaded),
+                        Color.parseColor("#1B873F"),
+                        Color.WHITE
+                    )
+                    MediaHistoryMatcher.MediaDownloadState.IN_PROGRESS -> Triple(
+                        ctx.getString(R.string.browser_batch_status_in_progress),
+                        Color.parseColor("#B45309"),
+                        Color.WHITE
+                    )
+                    MediaHistoryMatcher.MediaDownloadState.NEW -> Triple(
+                        ctx.getString(R.string.browser_batch_status_new),
+                        MaterialColors.getColor(ctx, com.google.android.material.R.attr.colorSurfaceVariant, Color.LTGRAY),
+                        MaterialColors.getColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant, Color.DKGRAY)
+                    )
+                }
+
+                statusTv.text = statusText
+                statusTv.setTextColor(textColor)
+                statusTv.background = GradientDrawable().apply {
+                    cornerRadius = 10f * density
+                    setColor(pillColor)
+                }
+
+                val extraInfo = listOf(media.duration, media.author).filter { it.isNotBlank() }.joinToString(" · ")
+                metaTv.text = extraInfo
+                metaTv.isVisible = extraInfo.isNotBlank()
+
+                card.contentDescription = ctx.getString(
+                    R.string.browser_batch_item_desc,
+                    pos + 1,
+                    total,
+                    titleTv.text.toString(),
+                    statusText,
+                    extraInfo
+                )
+                AccessibilityUtil.setStateDescription(
+                    card,
+                    ctx.getString(if (isChecked) R.string.state_selected else R.string.state_unselected)
+                )
+
+                card.setOnClickListener { onToggleItem(media) }
+                optionsBtn.contentDescription = ctx.getString(R.string.gallery_item_single_options_desc, titleTv.text.toString())
+                optionsBtn.setOnClickListener { onOpenSingleOptions(media) }
+
+                iv.setImageResource(if (media.isVideo) R.drawable.ic_video else R.drawable.ic_image)
+                iv.tag = media.thumb
+                if (media.thumb.startsWith("http")) {
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val bmp = ImageDownloadHelper.fetchPreviewBitmap(ctx.applicationContext, media.thumb, pageRefererUrl)
+                        if (bmp != null && dialog.isShowing && iv.tag == media.thumb) {
+                            iv.setImageBitmap(bmp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fun focusUrlBar() {
         if (!isAdded) return
         if (!quickPlatformsScroll.isVisible) {
@@ -2497,6 +3277,8 @@ class BrowserFragment : Fragment() {
         val pending = browserViewModel.consumePendingUrl()
         if (!pending.isNullOrBlank()) {
             loadAddress(pending)
+        } else if (currentPageUrl.startsWith("http") && webView?.isVisible == true) {
+            refreshDownloadedHighlightsOnPage(delayMs = 300L)
         }
     }
 
@@ -2513,6 +3295,8 @@ class BrowserFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        highlightRefreshJob?.cancel()
+        highlightRefreshJob = null
         (activity as? MainActivity)?.apply {
             exitWebFullscreen()
             setBrowserBottomNavHidden(false)
@@ -2535,5 +3319,6 @@ class BrowserFragment : Fragment() {
     companion object {
         private const val MAX_CACHED_IMAGES = 8
         private const val MAX_CACHED_VIDEOS = 10
+        private const val MAX_CACHED_PROFILES = 5
     }
 }

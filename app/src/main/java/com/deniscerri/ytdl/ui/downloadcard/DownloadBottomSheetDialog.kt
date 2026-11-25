@@ -15,6 +15,9 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -47,11 +50,14 @@ import com.deniscerri.ytdl.ui.BaseActivity
 import com.deniscerri.ytdl.ui.more.cookies.WebViewActivity
 import com.deniscerri.ytdl.util.AccessibilityUtil
 import com.deniscerri.ytdl.util.BrowserMediaUtil
+import com.deniscerri.ytdl.util.DownloadPresetManager
 import com.deniscerri.ytdl.util.UiUtil
 import com.facebook.shimmer.ShimmerFrameLayout
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.elevation.SurfaceColors
 import com.google.android.material.snackbar.Snackbar
@@ -87,6 +93,9 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
 
     private lateinit var scheduleBtn: Button
     private lateinit var downloadBtn: Button
+    private var quickPresetsScroll: HorizontalScrollView? = null
+    private var quickPresetsChipGroup: ChipGroup? = null
+    private var lastAppliedPresetId: String? = null
 
 
     private lateinit var result: ResultItem
@@ -158,6 +167,8 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
         tabLayout = view.findViewById(R.id.download_tablayout)
         viewPager2 = view.findViewById(R.id.download_viewpager)
         updateItem = view.findViewById(R.id.update_item)
+        quickPresetsScroll = view.findViewById(R.id.quick_presets_scroll)
+        quickPresetsChipGroup = view.findViewById(R.id.quick_presets_chipgroup)
         viewPager2.isUserInputEnabled = sharedPreferences.getBoolean("swipe_gestures_download_card", true)
 
 
@@ -219,6 +230,7 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
 
         viewPager2.adapter = fragmentAdapter
         viewPager2.isSaveFromParentEnabled = false
+        renderQuickPresets()
 
         view.post {
             when {
@@ -682,6 +694,7 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
                                 res.formats.isEmpty() || res.formats.any { it.format_note.contains("ytdlnisgeneric") }
                                 )
                             downloadCardViewModel.setResultItem(res)
+                            renderQuickPresets()
                             if (usingGenericFormatsOrEmpty && !sharedPreferences.getBoolean("quick_download", false)){
                                 initUpdateFormats(res)
                             }
@@ -768,6 +781,166 @@ class DownloadBottomSheetDialog : BottomSheetDialogFragment() {
             updateItem.isVisible = true
             initUpdateData()
         }
+    }
+
+    private fun renderQuickPresets() {
+        if (!isAdded) return
+        val scroll = quickPresetsScroll ?: return
+        val group = quickPresetsChipGroup ?: return
+        val isCommandOnly = (type == DownloadType.command && !Patterns.WEB_URL.matcher(result.url).matches())
+        if (isCommandOnly) {
+            scroll.isVisible = false
+            return
+        }
+        val isAudioOnly = !isImageOnly && BrowserMediaUtil.isAudioOnlyResult(result)
+        val presets = DownloadPresetManager.getAllPresets(requireContext()).filter { preset ->
+            when {
+                isImageOnly -> preset.type == "image"
+                isAudioOnly -> preset.type != "video"
+                else -> true
+            }
+        }
+        scroll.isVisible = true
+        group.removeAllViews()
+        val radiusPx = 18f * resources.displayMetrics.density
+        val ctx = requireContext()
+
+        presets.forEach { preset ->
+            val checked = preset.id == lastAppliedPresetId
+            val chip = Chip(ctx).apply {
+                id = View.generateViewId()
+                tag = preset.id
+                text = preset.name
+                contentDescription = getString(R.string.preset_apply_desc, preset.name)
+                isCheckable = true
+                isCheckedIconVisible = false
+                chipCornerRadius = radiusPx
+                isChecked = checked
+                AccessibilityUtil.setStateDescription(
+                    this,
+                    getString(if (checked) R.string.state_selected else R.string.state_unselected)
+                )
+                setOnClickListener {
+                    applyQuickPresetSelection(preset)
+                }
+                if (!preset.isBuiltIn) {
+                    setOnLongClickListener {
+                        confirmDeletePreset(preset)
+                        true
+                    }
+                }
+            }
+            group.addView(chip)
+        }
+
+        val saveChip = Chip(ctx).apply {
+            id = View.generateViewId()
+            text = getString(R.string.preset_save_current)
+            contentDescription = getString(R.string.preset_save_desc)
+            isCheckable = false
+            chipCornerRadius = radiusPx
+            setOnClickListener {
+                promptSaveCurrentPreset()
+            }
+        }
+        group.addView(saveChip)
+    }
+
+    private fun applyQuickPresetSelection(preset: DownloadPresetManager.DownloadPreset) {
+        if (!isAdded) return
+        lastAppliedPresetId = preset.id
+        quickPresetsChipGroup?.let { group ->
+            for (i in 0 until group.childCount) {
+                val childChip = group.getChildAt(i) as? Chip ?: continue
+                if (childChip.isCheckable) {
+                    val isNowChecked = childChip.tag == preset.id
+                    childChip.isChecked = isNowChecked
+                    AccessibilityUtil.setStateDescription(
+                        childChip,
+                        getString(if (isNowChecked) R.string.state_selected else R.string.state_unselected)
+                    )
+                }
+            }
+        }
+        val targetTab = when (preset.downloadType()) {
+            DownloadType.video -> 0
+            DownloadType.audio -> 1
+            DownloadType.image -> 2
+            else -> 0
+        }
+        tabLayout.getTabAt(targetTab)?.select()
+        viewPager2.setCurrentItem(targetTab, false)
+
+        fun applyToTargetFragment() {
+            when (targetTab) {
+                0 -> fragmentAdapter.getVideoFragment()?.applyQuickPreset(preset)
+                1 -> fragmentAdapter.getAudioFragment()?.applyQuickPreset(preset)
+                2 -> fragmentAdapter.getImageFragment()?.applyQuickPreset(preset)
+            }
+        }
+        applyToTargetFragment()
+        viewPager2.post {
+            if (isAdded) {
+                applyToTargetFragment()
+            }
+        }
+
+        val msg = getString(R.string.preset_applied_toast, preset.name)
+        AccessibilityUtil.announcePolitely(view, msg)
+        Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun promptSaveCurrentPreset() {
+        if (!isAdded) return
+        val ctx = requireContext()
+        val input = EditText(ctx).apply {
+            hint = getString(R.string.preset_name_hint)
+            isSingleLine = true
+        }
+        val pad = (18 * resources.displayMetrics.density).toInt()
+        val container = FrameLayout(ctx).apply {
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.preset_save_dialog_title)
+            .setView(container)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val rawName = input.text?.toString()?.trim().orEmpty()
+                if (rawName.isBlank()) return@setPositiveButton
+                val selectedType = tabTypeForPosition(tabLayout.selectedTabPosition)
+                val captured = when (selectedType) {
+                    DownloadType.audio -> fragmentAdapter.getAudioFragment()?.captureCurrentAsPreset(rawName)
+                    DownloadType.image -> fragmentAdapter.getImageFragment()?.captureCurrentAsPreset(rawName)
+                    else -> fragmentAdapter.getVideoFragment()?.captureCurrentAsPreset(rawName)
+                }
+                if (captured != null) {
+                    DownloadPresetManager.saveCustomPreset(ctx, captured)
+                    lastAppliedPresetId = captured.id
+                    renderQuickPresets()
+                    Toast.makeText(ctx, getString(R.string.preset_saved_toast, captured.name), Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
+    }
+
+    private fun confirmDeletePreset(preset: DownloadPresetManager.DownloadPreset) {
+        if (!isAdded) return
+        val ctx = requireContext()
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.preset_delete_title)
+            .setMessage(getString(R.string.preset_delete_message, preset.name))
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.ok) { _, _ ->
+                DownloadPresetManager.deleteCustomPreset(ctx, preset.id)
+                if (lastAppliedPresetId == preset.id) {
+                    lastAppliedPresetId = null
+                }
+                renderQuickPresets()
+                Toast.makeText(ctx, R.string.preset_deleted_toast, Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     private fun tabTypeForPosition(position: Int): DownloadType {

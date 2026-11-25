@@ -41,6 +41,9 @@ class DownloadFragmentAdapter(
     fun getVideoFragment(): DownloadVideoFragment? =
         fragments.filterIsInstance<DownloadVideoFragment>().firstOrNull()
 
+    fun getImageFragment(): DownloadImageFragment? =
+        fragments.filterIsInstance<DownloadImageFragment>().firstOrNull()
+
     fun setResultItem(res: ResultItem) {
         result = res
         fragments.forEach { frag ->

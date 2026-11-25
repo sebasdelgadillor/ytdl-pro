@@ -23,6 +23,7 @@ import com.deniscerri.ytdl.database.models.ResultItem
 import com.deniscerri.ytdl.database.viewmodel.DownloadViewModel
 import com.deniscerri.ytdl.util.AccessibilityUtil
 import com.deniscerri.ytdl.util.BrowserMediaUtil
+import com.deniscerri.ytdl.util.DownloadPresetManager
 import com.deniscerri.ytdl.util.FileUtil
 import com.deniscerri.ytdl.util.ImageDownloadHelper
 import com.deniscerri.ytdl.util.QualityCapsuleUtil
@@ -58,6 +59,7 @@ class DownloadImageFragment(
     private lateinit var titleInput: TextInputLayout
     private lateinit var saveDirInput: TextInputLayout
     private lateinit var freeSpaceText: TextView
+    private var activePreset: DownloadPresetManager.DownloadPreset? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -169,6 +171,42 @@ class DownloadImageFragment(
 
         renderFormatCapsules(currentExt)
         loadPreviewImage()
+        activePreset?.let { applyPresetToCurrentView(it) }
+    }
+
+    fun applyQuickPreset(preset: DownloadPresetManager.DownloadPreset) {
+        activePreset = preset
+        if (isAdded && ::downloadItem.isInitialized && ::formatCapsules.isInitialized) {
+            applyPresetToCurrentView(preset)
+        }
+    }
+
+    fun captureCurrentAsPreset(name: String): DownloadPresetManager.DownloadPreset? {
+        if (!::downloadItem.isInitialized) return null
+        val ext = downloadItem.container.lowercase(Locale.US)
+            .takeIf { it in listOf("jpg", "png", "webp") }
+            ?: "jpg"
+        return DownloadPresetManager.DownloadPreset(
+            id = "custom_${System.currentTimeMillis()}",
+            name = name.trim(),
+            type = "image",
+            container = ext,
+            customPath = downloadItem.downloadPath,
+            isBuiltIn = false
+        )
+    }
+
+    private fun applyPresetToCurrentView(preset: DownloadPresetManager.DownloadPreset) {
+        if (!isAdded || !::downloadItem.isInitialized) return
+        val ext = preset.container.lowercase(Locale.US)
+            .takeIf { it in listOf("jpg", "png", "webp") }
+            ?: "jpg"
+        downloadItem.container = ext
+        downloadItem.format.container = ext
+        if (preset.customPath.isNotBlank() && ::saveDirInput.isInitialized) {
+            setDownloadPath(preset.customPath)
+        }
+        renderFormatCapsules(ext)
     }
 
     private fun renderFormatCapsules(selectedExt: String) {

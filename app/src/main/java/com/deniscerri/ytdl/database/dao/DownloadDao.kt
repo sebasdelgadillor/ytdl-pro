@@ -457,4 +457,7 @@ interface DownloadDao {
 
     @Query("SELECT COUNT(id) FROM downloads WHERE status='Processing' AND incognito='1' and id in (:ids)")
     fun getProcessingAsIncognitoCountByIDs(ids: List<Long>): Int
+
+    @Query("SELECT DISTINCT url FROM downloads WHERE status IN ('Active', 'Queued', 'QueuedPaused', 'Paused', 'Processing', 'Scheduled') AND url != ''")
+    fun getInProgressUrls(): List<String>
 }

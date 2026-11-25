@@ -49,6 +49,9 @@
             android:id="@+id/action_browserFragment_to_downloadBottomSheetDialog"
             app:destination="@id/downloadBottomSheetDialog" />
         <action
+            android:id="@+id/action_browserFragment_to_downloadMultipleBottomSheetDialog2"
+            app:destination="@id/downloadMultipleBottomSheetDialog2" />
+        <action
             android:id="@+id/action_browserFragment_to_downloadsAlreadyExistDialog"
             app:destination="@id/downloadsAlreadyExistDialog" />
     </fragment>

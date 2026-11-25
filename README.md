@@ -52,8 +52,10 @@
    - Pulsación larga sobre publicaciones individuales en feeds (detectando permalink real del post, filtrando enlaces ruido como `/reels/audio/...`, `/liked_by/`, títulos genéricos *Video player* / *Instagram* o `aria-label` de avatares *Foto del perfil de…*).
    - Observador de duplicados (`alreadyExistsUiState` -> `DownloadsAlreadyExistDialog`) y soporte de SPA `history.pushState` (`doUpdateVisitedHistory`) desde el navegador.
    - **Selector múltiple con checkboxes para carruseles (`showAllDetectedMediaSheet`):** permite elegir diapositivas concretas (imágenes y videos), **Seleccionar todo / Limpiar**, formato de salida en lote (**JPG / PNG / WEBP**) y **Descargar seleccionados (N)** accesible para TalkBack/Jieshuo, manteniendo opciones individuales en botón lateral.
-2. **Hoja de descarga unificada de 3 pestañas (`Video / Audio / Imagen`):**
-   - `DownloadBottomSheetDialog` + `DownloadFragmentAdapter` con cápsulas limpias de calidad (`QualityCapsuleUtil`) para Video (MP4), Audio (MP3/M4A/Opus) e Imagen (JPG/PNG/WEBP).
+   - **Selector múltiple nativo para canales y perfiles con resaltado (`openChannelMultiSelectSheet` + `browser_channel_scanner.js` + `MediaHistoryMatcher`):** escanea feeds, canales y perfiles (YouTube, Instagram, TikTok, Facebook, X, Reddit, etc.), cruza IDs/URLs canónicas contra historial (`HistoryDao.getAllUrls`) y cola activa/pendiente (`DownloadDao.getInProgressUrls`), inyecta insignias visuales no bloqueantes (`✓ Descargado` / `⏳ En proceso`, con `pointer-events: none` y `aria-hidden="true"`) sobre las tarjetas de la página y abre un selector nativo con checkboxes, filtro **Solo nuevos**, botón **Seleccionar nuevos**, selector de perfil rápido en lote, opciones individuales y botón **Avanzado** (`DownloadMultipleBottomSheetDialog`).
+2. **Hoja de descarga unificada de 3 pestañas (`Video / Audio / Imagen`) y Perfiles rápidos:**
+   - `DownloadBottomSheetDialog` + `DownloadFragmentAdapter` con barra horizontal de **Perfiles rápidos** (`DownloadPresetManager`: `1080p MP4`, `Ligero 720p`, `Máxima calidad`, `MP3 320k`, `Audio 128k`, `Imagen JPG`, `Imagen PNG`, más **`+ Guardar`** / pulsación larga para borrar perfiles propios) que aplica automáticamente pestaña, resolución/bitrate/contenedor y modo compatible **conservando intacto el menú de Opciones avanzadas**.
+   - Cápsulas limpias de calidad (`QualityCapsuleUtil`) para Video (MP4), Audio (MP3/M4A/Opus) e Imagen (JPG/PNG/WEBP).
    - `DownloadImageFragment` + `ImageDownloadHelper` con vista previa autenticada (cookies/User-Agent del navegador cuando el CDN lo exige).
 3. **Detección dinámica de medios y carruseles en Compartir, Inicio y Navegador:**
    - Detecta dinámicamente si un enlace es imagen directa, carrusel fotográfico (`buildCarouselImageResultItems` + deduplicación de variantes `deduplicateCarouselImageUrls`), audio o video en `ShareActivity`, `HomeFragment`, `HomeAdapter`, `SelectPlaylistItemsDialog`, `ConfigureMultipleDownloadsAdapter`, `ResultRepository` y `DownloadViewModel`.
@@ -76,15 +78,17 @@
 - `app/src/main/assets/web_rules.json` — Configuración JSON versionada (`rulesVersion`) de plataformas rápidas, dominios, selectores, filtros de ruido/placeholders, scraper fallback y límites de frecuencia.
 - `app/src/main/java/com/deniscerri/ytdl/util/rules/WebRulesRegistry.kt` — Carga, fusión (`mergeWithBase`), override en `files/rules/web_rules_override.json` y valores por defecto (`WebRulesConfig.defaults()`).
 - `app/src/main/assets/browser_media_inspector.js` — Inspector DOM inyectado en el `WebView`: detecta video/imagen del post bajo toque o visible en pantalla, resuelve permalinks canónicos y filtra títulos/avatares genéricos.
+- `app/src/main/assets/browser_channel_scanner.js` — Escáner generalizable de canales/perfiles/feeds y resaltado visual no bloqueante (`✓ Descargado` / `⏳ En proceso`) mediante etiquetas `ytdlp-dl-badge`.
 - `app/src/main/assets/browser_icon_inspector.js` y `app/src/main/java/com/deniscerri/ytdl/util/BrowserScriptLoader.kt` — Cargador e inyección segura de scripts en el navegador.
-- `app/src/main/java/com/deniscerri/ytdl/ui/browser/BrowserFragment.kt` y `app/src/main/java/com/deniscerri/ytdl/database/viewmodel/BrowserViewModel.kt` — Navegador integrado, barra contextual, menú de medios detectados, diálogo de duplicados y puente hacia `DownloadBottomSheetDialog`.
-- `app/src/main/java/com/deniscerri/ytdl/util/BrowserMediaUtil.kt` — Utilidades puras Kotlin (compatibles con pruebas JVM sin Robolectric): clasificación de URLs de imagen/video/listado/ruido, canonicalización de permalinks, filtros de títulos genéricos y logos, inferencia de extensiones/títulos e identificadores `IMAGE_ONLY_FORMAT_ID`.
+- `app/src/main/java/com/deniscerri/ytdl/ui/browser/BrowserFragment.kt` y `app/src/main/java/com/deniscerri/ytdl/database/viewmodel/BrowserViewModel.kt` — Navegador integrado, barra contextual, menú de medios detectados, selector múltiple de canales/perfiles (`ChannelBatchAdapter`), diálogo de duplicados y puente hacia `DownloadBottomSheetDialog` / `DownloadMultipleBottomSheetDialog`.
+- `app/src/main/java/com/deniscerri/ytdl/util/BrowserMediaUtil.kt` y `MediaHistoryMatcher.kt` — Utilidades puras Kotlin (compatibles con pruebas JVM sin Robolectric): clasificación de URLs, canonicalización de permalinks, emparejamiento canónico de IDs (`yt:`, `ig:`, `tt:`, `fb:`, `x:`, `rd:`) e índice de estado `NEW / IN_PROGRESS / DOWNLOADED`.
 
 ### Flujo Compartir, Inicio y Tarjeta de Descarga Unificada
 - `app/src/main/java/com/deniscerri/ytdl/receiver/ShareActivity.kt` y `app/src/main/AndroidManifest.xml` — Recepción de enlaces (`ACTION_SEND`, `ACTION_VIEW` incluyendo `image/*`) y resolución inicial de tipo con `allow_dynamic_type_switch`.
 - `app/src/main/java/com/deniscerri/ytdl/ui/home/HomeFragment.kt`, `HomeAdapter.kt`, `SiteSessionGridAdapter.kt` — Pantalla de Inicio, portapapeles, cuadrícula de sesiones activas, tarjetas adaptables a Video/Audio o Imagen y apertura del menú completo cuando el enlace falla o es incierto.
-- `app/src/main/java/com/deniscerri/ytdl/ui/downloadcard/DownloadBottomSheetDialog.kt` y `DownloadFragmentAdapter.kt` — Hoja modal con cambio dinámico de pestaña (`Video` / `Audio` / `Imagen` / `Comando`), prevención de cierre ante error de tipo incierto (`Snackbar` + botón `Actualizar`) y reenvío de listas/carruseles.
-- `app/src/main/java/com/deniscerri/ytdl/ui/downloadcard/DownloadVideoFragment.kt`, `DownloadAudioFragment.kt`, `DownloadImageFragment.kt`, `DownloadCommandFragment.kt` — Fragmentos por pestaña con protección contra títulos placeholder.
+- `app/src/main/java/com/deniscerri/ytdl/util/DownloadPresetManager.kt` — Gestión pura de perfiles rápidos integrados y personalizados (JSON en `SharedPreferences`) con selección inteligente de cápsulas de video/audio e imagen.
+- `app/src/main/java/com/deniscerri/ytdl/ui/downloadcard/DownloadBottomSheetDialog.kt` y `DownloadFragmentAdapter.kt` — Hoja modal con barra horizontal de **Perfiles rápidos**, cambio dinámico de pestaña (`Video` / `Audio` / `Imagen` / `Comando`), prevención de cierre ante error de tipo incierto (`Snackbar` + botón `Actualizar`) y reenvío de listas/carruseles.
+- `app/src/main/java/com/deniscerri/ytdl/ui/downloadcard/DownloadVideoFragment.kt`, `DownloadAudioFragment.kt`, `DownloadImageFragment.kt`, `DownloadCommandFragment.kt` — Fragmentos por pestaña con aplicación y captura de perfiles rápidos, conservación de **Opciones avanzadas** y protección contra títulos placeholder.
 - `app/src/main/java/com/deniscerri/ytdl/database/repository/ResultRepository.kt`, `database/viewmodel/ResultViewModel.kt`, `database/viewmodel/DownloadViewModel.kt` — Orquestación de `yt-dlp`, atajo de imágenes estáticas, fallback automático y `resolveDownloadTypeForResult(...)`.
 
 ### Motor Fallback Local, Descarga de Imágenes y Trabajadores
@@ -100,7 +104,7 @@
 - `app/src/main/java/com/deniscerri/ytdl/ui/more/ForkInfoDialog.kt` — Diálogo informativo "Acerca de este proyecto".
 - `app/src/main/java/com/deniscerri/ytdl/ui/more/settings/updating/UpdateSettingsModule.kt` — Gestión de reglas web en Ajustes (**Actualizar desde GitHub**, importar JSON, copiar, restaurar integradas).
 - **Tests JVM (`app/src/test/java/com/deniscerri/ytdl/`):**
-  - `BrowserMediaUtilTest.kt` (15), `FallbackMediaRulesTest.kt` (7), `WebRulesRegistryTest.kt` (4), `QualityCapsuleUtilTest.kt` (5), `DomainUtilTest.kt` (5), `PlatformRateLimiterTest.kt` (3), `MetadataTagTest.kt` (14), `ExampleUnitTest.kt` (1).
+  - `BrowserMediaUtilTest.kt` (15), `MetadataTagTest.kt` (14), `FallbackMediaRulesTest.kt` (7), `QualityCapsuleUtilTest.kt` (5), `DomainUtilTest.kt` (5), `WebRulesRegistryTest.kt` (4), `DownloadPresetManagerTest.kt` (3), `MediaHistoryMatcherTest.kt` (3), `PlatformRateLimiterTest.kt` (3), `ExampleUnitTest.kt` (1).
 
 ---
 
@@ -157,10 +161,12 @@ Co-authored-by: Benzaiten7 <Benzaiten7@users.noreply.github.com>
 
 ## 6. Estado Verificado Actual (2026-11-25)
 
-- **Pruebas unitarias JVM (`:app:testGithubDebugUnitTest`):** **54/54 aprobadas** (0 fallos, 0 errores, 0 omitidas) tras la última edición de código/tests.
-- **APK debug (`arm64-v8a`):** `97,150,875` bytes, instalado en Galaxy S23 (`RFCW30GSYMP`) y copiado tanto en Desktop como en `/sdcard/Download/YTDLFork-1.9.1.1-arm64-v8a-debug-github.apk`.
+- **Pruebas unitarias JVM (`:app:testGithubDebugUnitTest`):** **60/60 aprobadas** (0 fallos, 0 errores, 0 omitidas) en 10 suites tras la última edición de código/tests.
+- **APK debug (`arm64-v8a`):** `97,169,290` bytes, instalado en Galaxy S23 (`RFCW30GSYMP`) y copiado tanto en Desktop como en `/sdcard/Download/YTDLFork-1.9.1.1-arm64-v8a-debug-github.apk`.
 - **Pruebas en vivo verificadas en Galaxy S23 (`RFCW30GSYMP`):**
+  - **Perfiles rápidos de descarga conservando Opciones avanzadas:** verificada la barra horizontal en `DownloadBottomSheetDialog` (`1080p MP4`, `Ligero 720p`, `Máxima calidad`, `MP3 320k`, `Audio 128k`, `Imagen JPG/PNG`, `+ Guardar`). Aplicado `Ligero 720p` (seleccionó cápsula `720p`) y `MP3 320k` (cambió a pestaña Audio a `320 kbps`), manteniendo **Opciones avanzadas** visible y expandible (`Ocultar opciones avanzadas`).
+  - **Selector múltiple de canal/perfil y resaltado en página (`BrowserFragment`):** sobre canal de YouTube (`@GoogleDevelopers/videos`), detectó `30` videos con títulos, duraciones y checkboxes nativos, perfil rápido para lote (`Auto` / `1080p MP4`) y botón `Avanzado`. Al encolar `2` videos en lote, transicionaron automáticamente de `Nuevo` → `En proceso` → `Ya descargado` conservando los títulos reales del video (`5 consejos...`), y el filtro **Solo nuevos** ocultó ambos ítems dejando `28` pendientes.
   - **Actualización remota de `web_rules.json` en Ajustes:** probado **Actualizar desde GitHub** desde `Reglas web y extractores`; descargó `web_rules_override.json` (`11,631` bytes) desde `sebasdelgadillor/ytdl-pro` y cambió el origen a `JSON personalizado`.
   - **Galería multimedios con checkboxes en Navegador:** sobre página de Instagram con `12` medios detectados, verificados checkboxes por fila, **Seleccionar todo**, chips **JPG / PNG / WEBP**, opciones individuales por ítem y **Descargar seleccionados (2)**; descargó en lote ambas imágenes seleccionadas en `.png` (`2,526,394` bytes y `144,275` bytes).
   - **`SelectPlaylistItemsDialog` y `ShareActivity`:** probados carrusel de Instagram (`/p/.../`), URL de imagen directa (`600.jpg`, `107,556` bytes), URL incierta (`example.com` manteniendo las 3 pestañas) e Inicio con enlace `.webp` adaptando botón **Imagen**.
-  - **Estabilidad y accesibilidad:** `NO_CRASHES` en `logcat` y `touch_exploration_enabled = 0` preservado sin alteraciones.
+  - **Estabilidad y accesibilidad:** `NO_CRASHES` (`CRASHES:0`) en `logcat` y `touch_exploration_enabled = 0` preservado sin alteraciones.

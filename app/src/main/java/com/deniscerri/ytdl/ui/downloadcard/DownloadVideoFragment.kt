@@ -35,6 +35,7 @@ import com.deniscerri.ytdl.database.viewmodel.YTDLPViewModel
 import com.deniscerri.ytdl.ui.downloadcard.crop.CropVideoBottomSheetDialog
 import com.deniscerri.ytdl.util.AccessibilityUtil
 import com.deniscerri.ytdl.util.BrowserMediaUtil
+import com.deniscerri.ytdl.util.DownloadPresetManager
 import com.deniscerri.ytdl.util.Extensions.applyFilenameTemplateForCuts
 import com.deniscerri.ytdl.util.Extensions.createBadge
 import com.deniscerri.ytdl.util.FileUtil
@@ -83,6 +84,7 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
     private var disabledCropClicked: Boolean = false
     // onViewCreated runs again on every updateUI, only start observing once
     private var observingFormatUpdates = false
+    private var activePreset: DownloadPresetManager.DownloadPreset? = null
 
 
     @SuppressLint("RestrictedApi")
@@ -575,6 +577,8 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
                 e.printStackTrace()
             }
 
+            activePreset?.let { applyPresetToCurrentView(view, it) }
+
             view.findViewById<Chip>(R.id.cut).apply {
                 if (this.isEnabled && savedInstanceState?.containsKey("click_cut") == true) {
                     this.performClick()
@@ -660,7 +664,91 @@ class DownloadVideoFragment(private var resultItem: ResultItem? = null, private 
             showSize = downloadItem.downloadSections.isEmpty()
         )
         formatViewModel.checkFreeSpace(filesize, downloadItem.downloadPath)
-        view?.let { renderVideoCapsules(it) }
+        view?.let {
+            renderVideoCapsules(it)
+            activePreset?.let { preset -> applyPresetToCurrentView(it, preset) }
+        }
+    }
+
+    fun applyQuickPreset(preset: DownloadPresetManager.DownloadPreset) {
+        activePreset = preset
+        val root = view
+        if (isAdded && root != null && ::downloadItem.isInitialized) {
+            applyPresetToCurrentView(root, preset)
+        }
+    }
+
+    fun captureCurrentAsPreset(name: String): DownloadPresetManager.DownloadPreset? {
+        if (!::downloadItem.isInitialized) return null
+        val heightBucket = QualityCapsuleUtil.bucketResolution(
+            QualityCapsuleUtil.resolveEffectiveResolutionHeight(downloadItem.format)
+        ).first
+        return DownloadPresetManager.DownloadPreset(
+            id = "custom_${System.currentTimeMillis()}",
+            name = name.trim(),
+            type = "video",
+            maxVideoHeight = heightBucket,
+            container = downloadItem.container.ifBlank { "mp4" },
+            compatibilityMode = downloadItem.videoPreferences.compatibilityMode,
+            embedSubtitles = downloadItem.videoPreferences.embedSubs,
+            embedThumbnail = downloadItem.videoPreferences.embedThumbnail,
+            customPath = downloadItem.downloadPath,
+            isBuiltIn = false
+        )
+    }
+
+    private fun applyPresetToCurrentView(rootView: View, preset: DownloadPresetManager.DownloadPreset) {
+        if (!isAdded || !::downloadItem.isInitialized) return
+        val nextContainer = if (preset.compatibilityMode) "mp4" else preset.container.ifBlank { "mp4" }
+        downloadItem.container = nextContainer
+        downloadItem.videoPreferences.compatibilityMode = preset.compatibilityMode
+        if (preset.compatibilityMode) {
+            downloadItem.videoPreferences.recodeVideo = false
+        }
+        downloadItem.videoPreferences.embedSubs = preset.embedSubtitles
+        downloadItem.videoPreferences.embedThumbnail = preset.embedThumbnail
+        if (preset.customPath.isNotBlank() && ::saveDir.isInitialized) {
+            setDownloadPath(preset.customPath)
+        }
+
+        val containerLayout = rootView.findViewById<TextInputLayout>(R.id.downloadContainer)
+        val containerTv = rootView.findViewById<AutoCompleteTextView>(R.id.container_textview)
+        val standardBadge = rootView.findViewById<TextView>(R.id.video_standard_badge)
+        containerLayout?.isEnabled = !preset.compatibilityMode && downloadItem.videoPreferences.cropValues.isBlank()
+        containerTv?.setText(nextContainer.ifEmpty { getString(R.string.defaultValue) }, false)
+        standardBadge?.text = nextContainer.ifBlank { "MP4" }.uppercase()
+
+        rootView.findViewById<Chip>(R.id.thumbnail)?.createBadge(
+            requireContext(),
+            listOf(downloadItem.SaveThumb, downloadItem.videoPreferences.embedThumbnail).count { it }
+        )
+        rootView.findViewById<Chip>(R.id.adjust_subtitles)?.createBadge(
+            requireContext(),
+            listOf(
+                downloadItem.videoPreferences.embedSubs,
+                downloadItem.videoPreferences.writeSubs,
+                downloadItem.videoPreferences.writeAutoSubs,
+                downloadItem.videoPreferences.burnSubs
+            ).count { it }
+        )
+        rootView.findViewById<Chip>(R.id.recode_video)?.createBadge(
+            requireContext(),
+            listOf(
+                downloadItem.videoPreferences.recodeVideo,
+                downloadItem.videoPreferences.compatibilityMode
+            ).count { it }
+        )
+
+        val capsules = QualityCapsuleUtil.buildVideoResolutionCapsules(downloadItem.allFormats)
+        val chosen = DownloadPresetManager.pickVideoCapsuleForPreset(capsules, preset.maxVideoHeight)
+        if (chosen != null) {
+            downloadItem.format = chosen.videoFormat
+            downloadItem.videoPreferences.audioFormatIDs.clear()
+            chosen.pairedAudioFormat?.let {
+                downloadItem.videoPreferences.audioFormatIDs.add(it.format_id)
+            }
+        }
+        renderVideoCapsules(rootView, applySelection = true)
     }
 
     private fun renderVideoCapsules(rootView: View, applySelection: Boolean = true) {
