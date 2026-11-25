@@ -15,6 +15,26 @@ object MediaHistoryMatcher {
         DOWNLOADED
     }
 
+    enum class MediaTypeFilter {
+        ALL,
+        VIDEOS,
+        IMAGES
+    }
+
+    fun matchesBatchFilters(
+        isVideo: Boolean,
+        state: MediaDownloadState,
+        typeFilter: MediaTypeFilter,
+        onlyNew: Boolean
+    ): Boolean {
+        if (onlyNew && state != MediaDownloadState.NEW) return false
+        return when (typeFilter) {
+            MediaTypeFilter.ALL -> true
+            MediaTypeFilter.VIDEOS -> isVideo
+            MediaTypeFilter.IMAGES -> !isVideo
+        }
+    }
+
     private val TRACKING_QUERY_PARAMS = setOf(
         "si", "pp", "feature", "t", "list", "index", "start_radio",
         "igsh", "igshid", "fbclid", "s", "ref", "ref_src", "ref_url",

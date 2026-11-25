@@ -3,6 +3,7 @@ package com.deniscerri.ytdl
 import com.deniscerri.ytdl.util.MediaHistoryMatcher
 import com.deniscerri.ytdl.util.MediaHistoryMatcher.MediaDownloadState
 import com.deniscerri.ytdl.util.MediaHistoryMatcher.MediaHistoryIndex
+import com.deniscerri.ytdl.util.MediaHistoryMatcher.MediaTypeFilter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -92,5 +93,20 @@ class MediaHistoryMatcherTest {
         assertFalse("ig:ImgDone99" in dlKeys) // not on this page
         assertTrue("fb:123456789012" in progKeys)
         assertFalse("yt:overlapVid2" in progKeys)
+    }
+
+    @Test
+    fun matchesBatchFilters_filtersByVideoImageAndOnlyNewState() {
+        assertTrue(MediaHistoryMatcher.matchesBatchFilters(true, MediaDownloadState.NEW, MediaTypeFilter.ALL, false))
+        assertTrue(MediaHistoryMatcher.matchesBatchFilters(false, MediaDownloadState.DOWNLOADED, MediaTypeFilter.ALL, false))
+
+        assertTrue(MediaHistoryMatcher.matchesBatchFilters(true, MediaDownloadState.NEW, MediaTypeFilter.VIDEOS, true))
+        assertFalse(MediaHistoryMatcher.matchesBatchFilters(false, MediaDownloadState.NEW, MediaTypeFilter.VIDEOS, true))
+        assertFalse(MediaHistoryMatcher.matchesBatchFilters(true, MediaDownloadState.DOWNLOADED, MediaTypeFilter.VIDEOS, true))
+
+        assertTrue(MediaHistoryMatcher.matchesBatchFilters(false, MediaDownloadState.NEW, MediaTypeFilter.IMAGES, true))
+        assertTrue(MediaHistoryMatcher.matchesBatchFilters(false, MediaDownloadState.IN_PROGRESS, MediaTypeFilter.IMAGES, false))
+        assertFalse(MediaHistoryMatcher.matchesBatchFilters(false, MediaDownloadState.IN_PROGRESS, MediaTypeFilter.IMAGES, true))
+        assertFalse(MediaHistoryMatcher.matchesBatchFilters(true, MediaDownloadState.NEW, MediaTypeFilter.IMAGES, false))
     }
 }

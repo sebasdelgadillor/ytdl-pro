@@ -405,6 +405,23 @@
             return '';
         }
 
+        function hasCardVideoHint(root, anchor) {
+            var hintRegex = /(clip|reel|video|v[ií]deo|reproducir|play video|duraci[oó]n)/i;
+            var scopes = [root, anchor];
+            for (var si = 0; si < scopes.length; si++) {
+                var sc = scopes[si];
+                if (!sc || !sc.querySelectorAll) continue;
+                if (sc.tagName && sc.tagName.toLowerCase() === 'video') return true;
+                if (sc.querySelector('video, [data-testid*="video" i], [data-testid*="play" i]')) return true;
+                var labeled = sc.querySelectorAll('svg[aria-label], [aria-label]');
+                for (var li = 0; li < Math.min(labeled.length, 10); li++) {
+                    var lb = (labeled[li].getAttribute('aria-label') || '').trim();
+                    if (lb && lb.length < 48 && hintRegex.test(lb)) return true;
+                }
+            }
+            return false;
+        }
+
         function findHighlightHost(anchor, cardRoot) {
             var sources = [anchor, cardRoot];
             for (var si = 0; si < sources.length; si++) {
@@ -526,13 +543,16 @@
             var title = extractTitle(rootEl, anchorEl, kInfo.primaryKey);
             var duration = extractDuration(rootEl);
             var lowerUrl = kInfo.cleanUrl.toLowerCase();
+            var isTikTokVideo = /^tt:/.test(kInfo.primaryKey) && lowerUrl.indexOf('/photo/') < 0;
             var isVideo = duration.length > 0 ||
-                /^(yt|tt|fb):/.test(kInfo.primaryKey) ||
+                /^(yt|fb):/.test(kInfo.primaryKey) ||
+                isTikTokVideo ||
                 lowerUrl.indexOf('/reel/') >= 0 ||
                 lowerUrl.indexOf('/reels/') >= 0 ||
                 lowerUrl.indexOf('/tv/') >= 0 ||
                 lowerUrl.indexOf('/videos/') >= 0 ||
-                lowerUrl.indexOf('/shorts/') >= 0;
+                lowerUrl.indexOf('/shorts/') >= 0 ||
+                hasCardVideoHint(rootEl, anchorEl);
 
             var existing = itemsByKey[kInfo.primaryKey];
             if (!existing) {

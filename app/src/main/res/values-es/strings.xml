@@ -811,4 +811,9 @@
     <string name="browser_badge_in_progress">⏳ En proceso</string>
     <string name="browser_batch_item_desc">%1$d de %2$d: %3$s. Estado: %4$s. %5$s</string>
     <string name="context_batch_select_page">Selección múltiple de página (%1$d)</string>
+    <string name="batch_filter_all">Todos (%1$d)</string>
+    <string name="batch_filter_videos">Videos (%1$d)</string>
+    <string name="batch_filter_images">Imágenes (%1$d)</string>
+    <string name="batch_filter_desc">Filtrar selección: %1$s</string>
+    <string name="batch_filter_empty">No hay elementos con este filtro</string>
 </resources>

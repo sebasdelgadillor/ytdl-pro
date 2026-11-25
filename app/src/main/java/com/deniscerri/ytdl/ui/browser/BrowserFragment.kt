@@ -1822,6 +1822,7 @@ class BrowserFragment : Fragment() {
         val visibleItems = items.take(30)
         val selectedIndices = linkedSetOf<Int>()
         var selectedImageExt = "jpg"
+        var galleryTypeFilter = MediaHistoryMatcher.MediaTypeFilter.ALL
         val checkBoxes = mutableListOf<CheckBox>()
         val cards = mutableListOf<MaterialCardView>()
 
@@ -1862,6 +1863,18 @@ class BrowserFragment : Fragment() {
         actionBar.addView(btnSelectAll)
         outer.addView(actionBar)
 
+        lateinit var syncSelectionUi: () -> Unit
+        val hasMixedTypes = visibleItems.any { it.isVideo } && visibleItems.any { !it.isVideo }
+        val galleryFilterBar = if (hasMixedTypes) {
+            buildMediaTypeFilterBar(ctx, density) { chosen ->
+                galleryTypeFilter = chosen
+                syncSelectionUi()
+            }.also { bar ->
+                bar.container.setPadding(dp(4), 0, dp(4), dp(6))
+                outer.addView(bar.container)
+            }
+        } else null
+
         if (visibleItems.any { !it.isVideo }) {
             val chipGroup = ChipGroup(ctx).apply {
                 isSingleSelection = true
@@ -1893,22 +1906,39 @@ class BrowserFragment : Fragment() {
             minimumHeight = dp(48)
         }
 
-        fun syncSelectionUi() {
+        syncSelectionUi = {
+            galleryFilterBar?.updateCounts(
+                allCount = visibleItems.size,
+                videosCount = visibleItems.count { it.isVideo },
+                imagesCount = visibleItems.count { !it.isVideo },
+                active = galleryTypeFilter
+            )
+            val visibleIndices = visibleItems.indices.filter { i ->
+                MediaHistoryMatcher.matchesBatchFilters(
+                    isVideo = visibleItems[i].isVideo,
+                    state = MediaHistoryMatcher.MediaDownloadState.NEW,
+                    typeFilter = galleryTypeFilter,
+                    onlyNew = false
+                )
+            }
             val count = selectedIndices.size
             selectedCountTv.text = getString(R.string.gallery_selected_count, count)
             btnDownloadSelected.text = getString(R.string.gallery_download_selected, count)
             btnDownloadSelected.isEnabled = count > 0
+            val allVisibleSelected = visibleIndices.isNotEmpty() && visibleIndices.all { it in selectedIndices }
             btnSelectAll.setText(
-                if (count == visibleItems.size && visibleItems.isNotEmpty()) {
+                if (allVisibleSelected) {
                     R.string.gallery_clear_selection
                 } else {
                     R.string.gallery_select_all
                 }
             )
             visibleItems.indices.forEach { i ->
+                val isShown = i in visibleIndices
                 val isChecked = i in selectedIndices
                 checkBoxes.getOrNull(i)?.isChecked = isChecked
                 cards.getOrNull(i)?.let { c ->
+                    c.isVisible = isShown
                     c.strokeWidth = if (isChecked) dp(2) else 0
                     c.strokeColor = primaryColor
                     AccessibilityUtil.setStateDescription(
@@ -1920,10 +1950,18 @@ class BrowserFragment : Fragment() {
         }
 
         btnSelectAll.setOnClickListener {
-            if (selectedIndices.size == visibleItems.size) {
-                selectedIndices.clear()
+            val visibleIndices = visibleItems.indices.filter { i ->
+                MediaHistoryMatcher.matchesBatchFilters(
+                    isVideo = visibleItems[i].isVideo,
+                    state = MediaHistoryMatcher.MediaDownloadState.NEW,
+                    typeFilter = galleryTypeFilter,
+                    onlyNew = false
+                )
+            }
+            if (visibleIndices.isNotEmpty() && visibleIndices.all { it in selectedIndices }) {
+                selectedIndices.removeAll(visibleIndices.toSet())
             } else {
-                selectedIndices.addAll(visibleItems.indices)
+                selectedIndices.addAll(visibleIndices)
             }
             syncSelectionUi()
         }
@@ -2083,6 +2121,7 @@ class BrowserFragment : Fragment() {
         }
         outer.addView(btnDownloadSelected, btnLp)
 
+        syncSelectionUi()
         dialog.setContentView(outer)
         dialog.show()
     }
@@ -2700,6 +2739,7 @@ class BrowserFragment : Fragment() {
         var allItems = initialItems
         val selectedKeys = linkedSetOf<String>()
         var onlyNewFilter = false
+        var mediaTypeFilter = MediaHistoryMatcher.MediaTypeFilter.ALL
         var selectedPresetId = DownloadPresetManager.getLastUsedBatchPresetId(ctx)
         val allPresets = DownloadPresetManager.getAllPresets(ctx)
 
@@ -2749,6 +2789,14 @@ class BrowserFragment : Fragment() {
         }
         summaryRow.addView(selectedCountTv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         outer.addView(summaryRow)
+
+        lateinit var syncBatchUi: () -> Unit
+        val typeFilterBar = buildMediaTypeFilterBar(ctx, density) { chosen ->
+            mediaTypeFilter = chosen
+            syncBatchUi()
+        }
+        typeFilterBar.container.setPadding(0, 0, 0, dp(6))
+        outer.addView(typeFilterBar.container)
 
         val controlsRow = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -2833,7 +2881,6 @@ class BrowserFragment : Fragment() {
         presetsScroll.addView(presetGroup)
         outer.addView(presetsScroll)
 
-        lateinit var syncBatchUi: () -> Unit
         val adapter = ChannelBatchAdapter(
             dialog = dialog,
             pageRefererUrl = initialUrl,
@@ -2861,8 +2908,20 @@ class BrowserFragment : Fragment() {
             layoutManager = LinearLayoutManager(ctx)
             this.adapter = adapter
         }
-        val listHeightPx = (resources.displayMetrics.heightPixels * 0.36f).toInt().coerceIn(dp(180), dp(290))
-        outer.addView(recycler, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, listHeightPx))
+        val emptyFilterTv = TextView(ctx).apply {
+            text = getString(R.string.batch_filter_empty)
+            alpha = 0.72f
+            gravity = Gravity.CENTER
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setPadding(dp(16), dp(24), dp(16), dp(24))
+            isVisible = false
+        }
+        val listHeightPx = (resources.displayMetrics.heightPixels * 0.32f).toInt().coerceIn(dp(160), dp(260))
+        val listContainer = android.widget.FrameLayout(ctx).apply {
+            addView(recycler, android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(emptyFilterTv, android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        outer.addView(listContainer, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, listHeightPx))
 
         val footerRow = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -2896,12 +2955,29 @@ class BrowserFragment : Fragment() {
             headerTitle.text = "${getString(R.string.browser_batch_select_title)} (${allItems.size})"
             summaryTv.text = getString(R.string.browser_batch_summary, newCount, dlCount, progCount)
 
-            val displayed = if (onlyNewFilter) {
+            val scopedItems = if (onlyNewFilter) {
                 allItems.filter { it.state == MediaHistoryMatcher.MediaDownloadState.NEW }
             } else {
                 allItems
             }
+            typeFilterBar.updateCounts(
+                allCount = scopedItems.size,
+                videosCount = scopedItems.count { it.isVideo },
+                imagesCount = scopedItems.count { !it.isVideo },
+                active = mediaTypeFilter
+            )
+
+            val displayed = allItems.filter {
+                MediaHistoryMatcher.matchesBatchFilters(
+                    isVideo = it.isVideo,
+                    state = it.state,
+                    typeFilter = mediaTypeFilter,
+                    onlyNew = onlyNewFilter
+                )
+            }
             adapter.submit(displayed, selectedKeys)
+            recycler.isVisible = displayed.isNotEmpty()
+            emptyFilterTv.isVisible = displayed.isEmpty()
 
             val selCount = selectedKeys.size
             selectedCountTv.text = getString(R.string.gallery_selected_count, selCount)
@@ -2925,10 +3001,13 @@ class BrowserFragment : Fragment() {
         }
 
         btnSelectNew.setOnClickListener {
-            val displayed = if (onlyNewFilter) {
-                allItems.filter { it.state == MediaHistoryMatcher.MediaDownloadState.NEW }
-            } else {
-                allItems
+            val displayed = allItems.filter {
+                MediaHistoryMatcher.matchesBatchFilters(
+                    isVideo = it.isVideo,
+                    state = it.state,
+                    typeFilter = mediaTypeFilter,
+                    onlyNew = onlyNewFilter
+                )
             }
             val selectableNewKeys = displayed.filter { it.state == MediaHistoryMatcher.MediaDownloadState.NEW }.map { it.key }
             val allNewSelected = selectableNewKeys.isNotEmpty() && selectableNewKeys.all { it in selectedKeys }
@@ -3003,7 +3082,7 @@ class BrowserFragment : Fragment() {
             val resolvedType = preset?.downloadType() ?: if (media.isVideo) {
                 DownloadType.video
             } else {
-                downloadViewModel.getDownloadType(url = media.url)
+                DownloadType.image
             }
             val dwl = downloadViewModel.createDownloadItemFromResult(
                 result = result,
@@ -3214,7 +3293,8 @@ class BrowserFragment : Fragment() {
                     setColor(pillColor)
                 }
 
-                val extraInfo = listOf(media.duration, media.author).filter { it.isNotBlank() }.joinToString(" · ")
+                val typeLabel = ctx.getString(if (media.isVideo) R.string.video else R.string.image)
+                val extraInfo = listOf(typeLabel, media.duration, media.author).filter { it.isNotBlank() }.joinToString(" · ")
                 metaTv.text = extraInfo
                 metaTv.isVisible = extraInfo.isNotBlank()
 
@@ -3247,6 +3327,71 @@ class BrowserFragment : Fragment() {
                 }
             }
         }
+    }
+
+    private class MediaTypeFilterBar(
+        val container: HorizontalScrollView,
+        private val allChip: Chip,
+        private val videosChip: Chip,
+        private val imagesChip: Chip
+    ) {
+        fun updateCounts(
+            allCount: Int,
+            videosCount: Int,
+            imagesCount: Int,
+            active: MediaHistoryMatcher.MediaTypeFilter
+        ) {
+            val ctx = container.context
+            listOf(
+                Triple(allChip, MediaHistoryMatcher.MediaTypeFilter.ALL, ctx.getString(R.string.batch_filter_all, allCount)),
+                Triple(videosChip, MediaHistoryMatcher.MediaTypeFilter.VIDEOS, ctx.getString(R.string.batch_filter_videos, videosCount)),
+                Triple(imagesChip, MediaHistoryMatcher.MediaTypeFilter.IMAGES, ctx.getString(R.string.batch_filter_images, imagesCount))
+            ).forEach { (chip, value, label) ->
+                val selected = value == active
+                chip.text = label
+                chip.contentDescription = ctx.getString(R.string.batch_filter_desc, label)
+                chip.isChecked = selected
+                AccessibilityUtil.setStateDescription(
+                    chip,
+                    ctx.getString(if (selected) R.string.state_selected else R.string.state_unselected)
+                )
+            }
+        }
+    }
+
+    private fun buildMediaTypeFilterBar(
+        ctx: Context,
+        density: Float,
+        onSelected: (MediaHistoryMatcher.MediaTypeFilter) -> Unit
+    ): MediaTypeFilterBar {
+        val radiusPx = 18f * density
+        val scroll = HorizontalScrollView(ctx).apply {
+            isHorizontalScrollBarEnabled = false
+        }
+        val group = ChipGroup(ctx).apply {
+            isSingleSelection = true
+            isSelectionRequired = true
+            isSingleLine = true
+        }
+        fun makeChip(filter: MediaHistoryMatcher.MediaTypeFilter): Chip {
+            return Chip(ctx).apply {
+                id = View.generateViewId()
+                isCheckable = true
+                isCheckedIconVisible = false
+                chipCornerRadius = radiusPx
+                setOnClickListener {
+                    onSelected(filter)
+                }
+            }
+        }
+        val allChip = makeChip(MediaHistoryMatcher.MediaTypeFilter.ALL)
+        val videosChip = makeChip(MediaHistoryMatcher.MediaTypeFilter.VIDEOS)
+        val imagesChip = makeChip(MediaHistoryMatcher.MediaTypeFilter.IMAGES)
+        group.addView(allChip)
+        group.addView(videosChip)
+        group.addView(imagesChip)
+        scroll.addView(group)
+        return MediaTypeFilterBar(scroll, allChip, videosChip, imagesChip)
     }
 
     fun focusUrlBar() {
